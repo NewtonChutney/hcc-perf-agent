@@ -41,9 +41,17 @@
 </section>
 
 <h2>Metrics</h2>
-<p class="muted">Band = limits <code>pass_or_fail</code> used for this run. Outside band: arrow = which way the value moved, <span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>, % = distance past the band edge. <b>Normal range</b> = median ± max({{ noise_floor_pct|num }}%, {{ noise_k|num }} × robust CV), over comparable runs (same test, last {{ noise_days }} days, PR runs excluded). Robust CV = 1.4826 × MAD / median, a spread measure that ignores occasional outliers; the {{ noise_floor_pct|num }}% floor applies when the test is quieter than that. A worse move inside it is noise (<span class="metric worse noise">≈ grey</span>). "Better is" is guessed from the metric name until per-service config declares it (PLAN.md 5.7). Chart: last 40 runs of the same test{% if test %} ({% for k, v in test.items() %}{{ k.split('.')[-1] }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}){% else %} (no status data found, so this is job-wide and may mix tests){% endif %}; shaded area = band each run was checked against; red dot = FAIL; ringed = this run.</p>
+<dl class="key small">
+  <dt>Band</dt><dd>Limits <code>pass_or_fail</code> used for this run.</dd>
+  <dt>Outside band</dt><dd>Arrow = which way the value moved (<span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>); % = distance past the band edge.</dd>
+  <dt>Normal range</dt><dd>Median ± max({{ noise_floor_pct|num }}%, {{ noise_k|num }} × robust CV) over comparable runs: same test, last {{ noise_days }} days, PR runs excluded. A worse move inside it is noise (<span class="metric worse noise">≈ grey</span>).</dd>
+  <dt>Robust CV</dt><dd>1.4826 × MAD / median, a spread measure that ignores occasional outliers. The {{ noise_floor_pct|num }}% floor applies when the test is quieter than that.</dd>
+  <dt>Better is</dt><dd>Guessed from the metric name until per-service config declares it (PLAN.md 5.7).</dd>
+</dl>
+{% set history_tip %}Last 40 runs of the same test{% if test %} ({% for k, v in test.items() %}{{ k.split('.')[-1] }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}){% else %} (no status data found, so this is job-wide and may mix tests){% endif %}. Shaded area = band each run was checked against; red dot = FAIL; ringed = this run.{% endset %}
+<div class="scroll-x">
 <table>
-  <thead><tr><th>Metric</th><th>Result</th><th class="num">Value</th><th class="num">Band</th><th>Outside band</th><th class="num" title="median ± max({{ noise_floor_pct|num }}%, {{ noise_k|num }} × robust CV) over comparable runs">Normal range</th><th>Better is</th><th>History</th></tr></thead>
+  <thead><tr><th>Metric</th><th>Result</th><th class="num">Value</th><th class="num">Band</th><th>Outside band</th><th class="num hint" title="median ± max({{ noise_floor_pct|num }}%, {{ noise_k|num }} × robust CV) over comparable runs">Normal range</th><th class="nowrap">Better is</th><th class="hint" title="{{ history_tip }}">History</th></tr></thead>
   <tbody>
   {% for m in a.readings if m.decision.metric != "?" %}
     <tr>
@@ -78,6 +86,7 @@
   {% endif %}
   </tbody>
 </table>
+</div>
 
 <h2 id="review">Review</h2>
 <div id="review-section" aria-live="polite">

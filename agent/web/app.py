@@ -46,6 +46,18 @@ templates.env.filters["short_time"] = lambda s: (s or "")[:16].replace("T", " ")
 templates.env.filters["who"] = lambda s: (s or "").removesuffix("@cluster.local")
 
 
+@app.middleware("http")
+async def no_stale_pages(request: Request, call_next):
+    """Pages show live ES state (results, reviews), so the browser must never re-show a stored copy.
+
+    Back/Forward reuses the HTTP cache even for expired entries; only no-store stops that.
+    static/*.js also refreshes pages restored from the back/forward cache."""
+    response = await call_next(request)
+    if response.headers.get("content-type", "").startswith("text/html"):
+        response.headers.setdefault("Cache-Control", "no-store")
+    return response
+
+
 def current_user(request: Request) -> str | None:
     return (request.headers.get("x-forwarded-email") or request.headers.get("x-forwarded-user")
             or os.environ.get("DEV_USER") or None)
@@ -128,8 +140,8 @@ def runs_page(request: Request, days: int = 7, job: str = "", result: str = "", 
     counts = collections.Counter(a.label for _, a, _ in rows)
     user = current_user(request)
     here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-    # static/runs.js asks for just the results area (X-Partial: 1) when a filter changes; the
-    # URL stays the same as the full page's, so responses must not be cached interchangeably.
+    # static/runs.js asks for just the results area (X-Partial: 1) when a filter changes, on the
+    # same URL as the full page. Neither is cached (see no_stale_pages); Vary covers proxies.
     partial = request.headers.get("x-partial") == "1"
     response = templates.TemplateResponse(request, "_runs_results.html" if partial else "runs.html", dict(
         rows=rows, matched=matched, max_rows=MAX_ROWS, max_days=MAX_DAYS, jobs=jobs, days=days, job=job, result=result,
@@ -137,8 +149,6 @@ def runs_page(request: Request, days: int = 7, job: str = "", result: str = "", 
         label=label, labels=LABELS, pending=pending, counts=counts, error=error, user=user, here=here,
         can_write=writeback.allowed(user), result_for=writeback.RESULT_FOR_CATEGORY))
     response.headers["Vary"] = "X-Partial"
-    if partial:
-        response.headers["Cache-Control"] = "no-store"
     return response
 
 

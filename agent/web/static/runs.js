@@ -66,6 +66,15 @@
     load(query, false);
   });
 
+  // Back from a run page can restore this page from the back/forward cache, as it was before
+  // the review; reload the results so labels and review status are current.
+  window.addEventListener("pageshow", e => {
+    if (!e.persisted) return;
+    const query = location.search.replace(/^\?/, "");
+    formFromQuery(query);
+    load(query, false);
+  });
+
   results.addEventListener("click", e => {
     // "review pending" shortcut: set the Review filter instead of navigating.
     const link = e.target.closest("a.pending-link");

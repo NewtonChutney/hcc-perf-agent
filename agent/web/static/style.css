@@ -2,11 +2,14 @@
   --red: #cf222e; --green: #1a7f37; --amber: #9a6700; --blue: #0969da; --purple: #8250df; }
 * { box-sizing: border-box; }
 body { margin: 0; font: 14px/1.45 system-ui, sans-serif; color: var(--fg); }
-header { display: flex; gap: 24px; align-items: center; padding: 10px 20px; border-bottom: 1px solid var(--line); background: var(--bg2); }
+/* Content is a centered column of at most --page wide; the header bar spans the window but its
+   contents line up with that column. */
+:root { --page: 1500px; --gutter: max(20px, calc((100% - var(--page)) / 2 + 20px)); }
+header { display: flex; gap: 24px; align-items: center; padding: 10px var(--gutter); border-bottom: 1px solid var(--line); background: var(--bg2); }
 header .brand { font-weight: 600; color: var(--fg); text-decoration: none; }
 header nav a { margin-right: 16px; }
 header .user { margin-left: auto; color: var(--muted); }
-main { padding: 16px 20px; max-width: 1500px; }
+main { padding: 16px 20px; max-width: var(--page); margin: 0 auto; }
 a { color: var(--blue); }
 h1 { font-size: 20px; } h2 { font-size: 16px; margin-top: 24px; }
 .banner { background: #fff8c5; border: 1px solid #d4a72c66; padding: 6px 10px; border-radius: 6px; }
@@ -65,6 +68,17 @@ table.categories td { vertical-align: top; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; }
 dt { color: var(--muted); }
+dl.key { margin: 0 0 10px; max-width: 1100px; }
+dl.key dt { font-weight: 600; }
+dl.key dd { margin: 0; color: var(--muted); }
+/* Colour words inside prose, not chips in a row. */
+dl.key .metric, .legend .metric { margin: 0; }
+/* A table too wide for the window scrolls by itself instead of the page. */
+.scroll-x { overflow-x: auto; }
+/* Header cells with a hover explanation. */
+th.hint { cursor: help; text-decoration: underline dotted var(--muted); text-underline-offset: 3px; }
+/* Scale down with the History column on narrow windows; never past its drawn size. */
+svg.spark { display: block; max-width: 100%; min-width: 140px; height: auto; }
 svg.spark .band { fill: #0969da1f; }
 svg.spark .line { fill: none; stroke: var(--muted); stroke-width: 1; }
 svg.spark circle.pass { fill: var(--fg); }
