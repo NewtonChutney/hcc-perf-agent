@@ -110,11 +110,22 @@ def run_page(request: Request, job: str, number: str, saved: bool = False):
         raise HTTPException(404, f"No decisions found for {job} #{number}")
     assessment = evaluate(run, all_metrics=True)
     metrics = [r.decision.metric for r in assessment.readings]
-    test, history = es.comparable_history(run, metrics)
+    test, history = es.comparable_history(run, [m for m in metrics if m != "?"])
     charts = {m: sparkline(points, highlight_url=run.build_url) for m, points in history.items()}
+    # opl's pass_or_fail records a check that raised as {"result": "ERROR"} with no metric name
+    # (pass_or_fail.py: info_all.append({"result": "ERROR", "exception": ...}), and the exception
+    # text is dropped before upload). Name the candidates: metrics this job checks in other runs
+    # that have no decision in this one.
+    nameless_errors = sum(1 for d in run.decisions if d.metric == "?")
+    missing_metrics = []
+    if nameless_errors:
+        present = {d.metric for d in run.decisions}
+        # A year back: a metric that errors in every run never gets a named decision again.
+        missing_metrics = sorted(m for m in es.gated_metrics(job, days=365) if m not in present)
     user = current_user(request)
     return templates.TemplateResponse(request, "run.html", dict(
         run=run, a=assessment, charts=charts, test=test, review=es.get_review(run.review_id),
+        nameless_errors=nameless_errors, missing_metrics=missing_metrics,
         categories=CATEGORIES, saved=saved, user=user,
         can_write=writeback.allowed(user),
         agree_plan=writeback.planned(run, assessment.predicted_category),

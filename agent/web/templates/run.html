@@ -45,7 +45,7 @@
 <table>
   <thead><tr><th>Metric</th><th>Result</th><th class="num">Value</th><th class="num">Band</th><th>Outside band</th><th class="num">Normal range (agent)</th><th>Better is</th><th>History</th></tr></thead>
   <tbody>
-  {% for m in a.readings %}
+  {% for m in a.readings if m.decision.metric != "?" %}
     <tr>
       <td><code>{{ m.decision.metric }}</code><br><span class="muted">{{ m.decision.method }}</span></td>
       <td>{{ tag(m.decision.result) }}</td>
@@ -60,6 +60,19 @@
       <td>{{ charts.get(m.decision.metric, "") }}</td>
     </tr>
   {% endfor %}
+  {% if nameless_errors %}
+    <tr>
+      <td colspan="2"><b>{{ nameless_errors }} check(s) errored</b>{{ " " }}{{ tag("ERROR") }}</td>
+      <td colspan="5" class="small">
+        <code>pass_or_fail</code> recorded these as ERROR without the metric name or the error text (an <code>opl</code> bug).
+        {% if missing_metrics %}Checked in other runs of this job but missing here:
+          {% for mm in missing_metrics %}<code>{{ mm }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.
+        {% endif %}
+        The usual cause is a value missing from this run's status data ("Value to check should not be None" in the
+        <a href="{{ run.build_url }}console">console</a>), e.g. a monitoring query that returned nothing.
+      </td>
+    </tr>
+  {% endif %}
   </tbody>
 </table>
 
