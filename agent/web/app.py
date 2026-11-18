@@ -124,12 +124,16 @@ def run_page(request: Request, job: str, number: str, saved: bool = False):
         missing_metrics = sorted(m for m in es.gated_metrics(job, days=365) if m not in present)
     user = current_user(request)
     return templates.TemplateResponse(request, "run.html", dict(
-        run=run, a=assessment, charts=charts, test=test, review=es.get_review(run.review_id),
-        nameless_errors=nameless_errors, missing_metrics=missing_metrics,
-        categories=CATEGORIES, saved=saved, user=user,
-        can_write=writeback.allowed(user),
-        agree_plan=writeback.planned(run, assessment.predicted_category),
-        result_for=writeback.RESULT_FOR_CATEGORY))
+        charts=charts, test=test, nameless_errors=nameless_errors, missing_metrics=missing_metrics,
+        **_review_context(run, assessment, user, saved)))
+
+
+def _review_context(run: es.Run, a, user: str | None, saved: bool) -> dict:
+    """Everything _review.html needs; shared by the run page and the in-place save."""
+    return dict(run=run, a=a, user=user, saved=saved, review=es.get_review(run.review_id),
+                categories=CATEGORIES, can_write=writeback.allowed(user),
+                agree_plan=writeback.planned(run, a.predicted_category),
+                result_for=writeback.RESULT_FOR_CATEGORY)
 
 
 @app.post("/runs/{job}/{number}/review")
@@ -172,6 +176,13 @@ def submit_review(request: Request, job: str, number: str,
         "source": "web-ui",
         "writeback": outcome,
     })
+    # static/run.js saves without navigating: answer with the refreshed review area.
+    if request.headers.get("x-partial") == "1":
+        if outcome.get("status") == "changed" and run.status:
+            run.status["result"] = outcome["result_after"]
+        response = templates.TemplateResponse(request, "_review.html", _review_context(run, a, user, True))
+        response.headers["Cache-Control"] = "no-store"
+        return response
     # Agree from the runs list returns to the same filtered list; only local paths are accepted.
     if next.startswith("/") and not next.startswith("//"):
         return RedirectResponse(next, status_code=303)

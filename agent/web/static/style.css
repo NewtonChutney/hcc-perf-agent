@@ -32,8 +32,8 @@ code { font-size: 12px; }
 a.pending-link { text-decoration: none; }
 .review-cell { min-width: 220px; font-size: 13px; }
 form.inline-agree { display: inline; margin-left: 6px; }
-#runs-results { transition: opacity 0.15s; }
-#runs-results.loading { opacity: 0.45; pointer-events: none; }
+#runs-results, #review-section { transition: opacity 0.15s; }
+#runs-results.loading, #review-section.loading { opacity: 0.45; pointer-events: none; }
 button.small { font-size: 12px; padding: 1px 8px; }
 /* Metric chips: the arrow shows which way the value moved; the color shows good or bad. */
 .metric { display: inline-block; margin: 0 8px 2px 0; font-size: 12px; white-space: nowrap; }

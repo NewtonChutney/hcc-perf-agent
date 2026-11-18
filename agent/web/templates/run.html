@@ -77,60 +77,10 @@
 </table>
 
 <h2 id="review">Review</h2>
-{% set wb = (review.writeback if review else None) or {} %}
-{% if saved %}<p class="ok">Review saved.
-  {% if wb.status == "changed" %}Result changed {{ wb.result_before }} → {{ wb.result_after }} in status data (dashboard: {{ wb.dashboard }}).
-  {% elif wb.status == "unchanged" %}Result was already {{ wb.result_after }}; nothing to change.
-  {% elif wb.status == "not_allowed" %}<span class="error">Result not changed: you're not on the list of users who can change results (WRITEBACK_USERS).</span>
-  {% elif wb.status == "conflict" %}<span class="error">Result not changed: the run was edited at the same time. Submit again.</span>
-  {% elif wb.status == "failed" %}<span class="error">Result not changed: {{ wb.error }}</span>
-  {% elif wb.status == "no_status_data" %}<span class="error">Result not changed: no status-data document found for this run.</span>
-  {% endif %}</p>{% endif %}
-{% if review %}
-<p>Last review by <b>{{ review.reviewer|who }}</b> at {{ review.reviewed_at|short_time }} UTC:
-  <span class="tag">{{ review.category }}</span>
-  {% if review.category == review.predicted_category %}(agreed with the agent){% else %}(agent said {{ review.predicted_category or "nothing" }}){% endif %}
-  {% if wb.status == "changed" %}· result {{ wb.result_before }} → {{ wb.result_after }}{% endif %}
-  {% if review.explanation %}<br><q>{{ review.explanation }}</q>{% endif %}
-  {% if review.bug_url %}<br><a href="{{ review.bug_url }}">{{ review.bug_url }}</a>{% endif %}
-</p>
-{% endif %}
-
-{% if a.predicted_category %}
-<form method="post" action="/runs/{{ run.job_name }}/{{ run.build_number }}/review" class="review">
-  <p>Agent's category: <span class="tag">{{ a.predicted_category }}</span></p>
-  {% if writeback_enabled() and run.status %}
-  <p class="small">
-    {% if can_write %}
-      Saving a review also sets this run's <b>result</b> in status data and the results dashboard, like a ReportPortal override
-      (current result: <b>{{ run.status.result }}</b>).
-      {% if agree_plan and agree_plan.changes %}Agree sets it to <b>{{ agree_plan.new }}</b>{% if agree_plan.new == "PASS" %}, so it enters the baseline for later runs{% endif %}.{% elif agree_plan %}Agree keeps it {{ agree_plan.old }}.{% endif %}
-      <br><span class="muted">Category → result: {% for c, r in result_for.items() %}{{ c }} → {{ r }}{% if not loop.last %}, {% endif %}{% endfor %}.</span>
-    {% else %}
-      <span class="muted">Your review is recorded, but it won't change the run's result: only listed users can (WRITEBACK_USERS).</span>
-    {% endif %}
-  </p>
-  {% endif %}
-  <button name="verdict" value="agree" class="agree">Agree</button>
-  <details>
-    <summary>Disagree…</summary>
-    <label>Correct category
-      <select name="category">
-        <option value="">choose</option>
-        {% for c in categories %}<option>{{ c }}</option>{% endfor %}
-      </select>
-    </label>
-    <label>Bug URL (required for known_issue) <input type="url" name="bug_url" placeholder="https://redhat.atlassian.net/browse/..."></label>
-    <label>Why <textarea name="explanation" rows="3"></textarea></label>
-    <button name="verdict" value="disagree" class="disagree">Save correction</button>
-  </details>
-</form>
-{% else %}
-<p class="muted">Nothing to review: the run passed.</p>
-{% endif %}
-{% if run.status and run.status.result and run.status.result != run.result %}
-<p class="small">pass_or_fail said <b>{{ run.result }}</b>; the stored result is now <b>{{ run.status.result }}</b> (changed by a review or ReportPortal).</p>
-{% endif %}
+<div id="review-section" aria-live="polite">
+{% include "_review.html" %}
+</div>
+<script src="/static/run.js" defer></script>
 
 {% include "_chat.html" %}
 {% endblock %}
