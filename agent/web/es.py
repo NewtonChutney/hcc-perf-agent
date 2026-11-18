@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
@@ -87,7 +88,13 @@ class Run:
 def _es(method: str, path: str, body=None, ndjson: str | None = None) -> dict:
     headers = {"Content-Type": "application/x-ndjson" if ndjson else "application/json"}
     data = ndjson if ndjson is not None else (json.dumps(body) if body is not None else None)
-    r = requests.request(method, f"{ES_URL}/{path}", data=data, headers=headers, timeout=TIMEOUT)
+    # The ES proxy answers 502-504 under bursts of searches; reads are safe to retry.
+    read = method == "GET" or path.endswith(("/_search", "/_count", "/_mget"))
+    for attempt in range(3 if read else 1):
+        r = requests.request(method, f"{ES_URL}/{path}", data=data, headers=headers, timeout=TIMEOUT)
+        if r.status_code not in (502, 503, 504) or attempt == (2 if read else 0):
+            break
+        time.sleep(0.5 * (attempt + 1))
     r.raise_for_status()
     return r.json()
 

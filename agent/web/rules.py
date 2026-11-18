@@ -285,10 +285,12 @@ def evaluate(run: Run, all_metrics: bool = False) -> Assessment:
     worse = [r.decision.metric for r in readings if all_metrics or r.verdict == "worse"]
     bands: dict[str, NoiseBand | None] = {}
     if worse and run.status:
-        _, hist = es.comparable_history(run, worse, size=50, days=NOISE_DAYS)
+        # Values come from status data; the decisions join isn't needed for a band.
+        _, hist = es.comparable_history(run, worse, size=50, days=NOISE_DAYS, with_decisions=False)
         for m, points in hist.items():
             values = [p["value"] for p in points
-                      if p.get("build_url") != run.build_url and not p.get("pr")
+                      if p.get("build_url") != run.build_url and p.get("ended") != run.status.get("ended")
+                      and not p.get("pr")
                       and p.get("run_result") != "ERROR"
                       and isinstance(p.get("value"), (int, float)) and not isinstance(p.get("value"), bool)]
             bands[m] = noise_band(values)
@@ -301,7 +303,20 @@ def evaluate_many(runs: list[Run], workers: int = 8) -> list[Assessment]:
     from concurrent.futures import ThreadPoolExecutor
 
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        return list(pool.map(evaluate, runs))
+        return list(pool.map(_evaluate_or_fallback, runs))
+
+
+def _evaluate_or_fallback(run: Run) -> Assessment:
+    """One run's history failing to load shouldn't blank a whole list: label it without
+    the noise check (worse moves count as regressions) and say so."""
+    import requests
+
+    try:
+        return evaluate(run)
+    except requests.RequestException:
+        a = assess(run)
+        a.summary += " (History didn't load, so this label skips the noise check; reload to retry.)"
+        return a
 
 
 def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
