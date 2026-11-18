@@ -30,6 +30,10 @@ CATEGORIES = (
 )
 
 
+# Labels assess() can return, in the order the UI lists them.
+LABELS = ("REGRESSION", "IMPROVED", "UNCLEAR", "ERROR", "PASS")
+
+
 def better_direction(metric: str) -> str | None:
     """'lower', 'higher', or None when the name doesn't say."""
     for pattern, direction in _DIRECTION_RULES:

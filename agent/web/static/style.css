@@ -31,6 +31,8 @@ code { font-size: 12px; }
 .tag.pending { background: #fff1e5; border-color: #bc4c00; color: #bc4c00; text-decoration: none; }
 a.pending-link { text-decoration: none; }
 .review-cell { min-width: 220px; font-size: 13px; }
+form.inline-agree { display: inline; margin-left: 6px; }
+button.small { font-size: 12px; padding: 1px 8px; }
 /* Metric chips: the arrow shows which way the value moved; the color shows good or bad. */
 .metric { display: inline-block; margin: 0 8px 2px 0; font-size: 12px; white-space: nowrap; }
 .metric .arrow { margin-right: 3px; }

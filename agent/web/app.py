@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import alerts, chat, es, fmt, writeback
 from .charts import sparkline
-from .rules import CATEGORIES, assess
+from .rules import CATEGORIES, LABELS, assess
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 HERE = pathlib.Path(__file__).parent
@@ -66,7 +66,7 @@ def readyz():
 
 @app.get("/", response_class=HTMLResponse)
 def runs_page(request: Request, days: int = 7, job: str = "", result: str = "FAIL", show_pr: bool = False,
-              review: str = ""):
+              review: str = "", label: str = ""):
     days = max(1, min(days, 60))
     error = None
     rows, jobs = [], []
@@ -85,10 +85,15 @@ def runs_page(request: Request, days: int = 7, job: str = "", result: str = "FAI
         rows = [x for x in rows if x[1].predicted_category and not x[2]]
     elif review == "reviewed":
         rows = [x for x in rows if x[2]]
+    if label:
+        rows = [x for x in rows if x[1].label == label]
     counts = collections.Counter(a.label for _, a, _ in rows)
+    user = current_user(request)
+    here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
     return templates.TemplateResponse(request, "runs.html", dict(
         rows=rows, jobs=jobs, days=days, job=job, result=result, show_pr=show_pr, review=review,
-        pending=pending, counts=counts, error=error, user=current_user(request)))
+        label=label, labels=LABELS, pending=pending, counts=counts, error=error, user=user, here=here,
+        can_write=writeback.allowed(user), result_for=writeback.RESULT_FOR_CATEGORY))
 
 
 @app.get("/runs/{job}/{number}", response_class=HTMLResponse)
@@ -112,7 +117,7 @@ def run_page(request: Request, job: str, number: str, saved: bool = False):
 @app.post("/runs/{job}/{number}/review")
 def submit_review(request: Request, job: str, number: str,
                   verdict: str = Form(...), category: str = Form(""),
-                  explanation: str = Form(""), bug_url: str = Form("")):
+                  explanation: str = Form(""), bug_url: str = Form(""), next: str = Form("")):
     check_same_origin(request)
     user = current_user(request)
     if not user:
@@ -149,6 +154,9 @@ def submit_review(request: Request, job: str, number: str,
         "source": "web-ui",
         "writeback": outcome,
     })
+    # Agree from the runs list returns to the same filtered list; only local paths are accepted.
+    if next.startswith("/") and not next.startswith("//"):
+        return RedirectResponse(next, status_code=303)
     return RedirectResponse(f"/runs/{job}/{number}?saved=1", status_code=303)
 
 
