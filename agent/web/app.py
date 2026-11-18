@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import alerts, chat, es, fmt, writeback
 from .charts import sparkline
-from .rules import CATEGORIES, LABELS, assess
+from .rules import CATEGORIES, LABELS, evaluate, evaluate_many
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 HERE = pathlib.Path(__file__).parent
@@ -75,7 +75,7 @@ def runs_page(request: Request, days: int = 7, job: str = "", result: str = "FAI
         if not show_pr:
             runs = [r for r in runs if not (r.status and r.status["pr"])]
         reviews = es.get_reviews([r.review_id for r in runs])
-        rows = [(r, assess(r), reviews.get(r.review_id)) for r in runs]
+        rows = [(r, a, reviews.get(r.review_id)) for r, a in zip(runs, evaluate_many(runs))]
         jobs = es.job_names()
     except requests.RequestException as exc:
         error = f"Elasticsearch request failed: {exc}"
@@ -101,7 +101,7 @@ def run_page(request: Request, job: str, number: str, saved: bool = False):
     run = es.get_run(job, number)
     if run is None:
         raise HTTPException(404, f"No decisions found for {job} #{number}")
-    assessment = assess(run)
+    assessment = evaluate(run, all_metrics=True)
     metrics = [r.decision.metric for r in assessment.readings]
     test, history = es.comparable_history(run, metrics)
     charts = {m: sparkline(points, highlight_url=run.build_url) for m, points in history.items()}
@@ -125,7 +125,7 @@ def submit_review(request: Request, job: str, number: str,
     run = es.get_run(job, number)
     if run is None:
         raise HTTPException(404)
-    a = assess(run)
+    a = evaluate(run)
     if verdict == "agree":
         category = a.predicted_category or ""
     if category not in CATEGORIES:

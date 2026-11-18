@@ -310,7 +310,8 @@ def test_identity(doc: dict) -> dict:
     return ident
 
 
-def comparable_history(run: Run, metrics: list[str], size: int = 40) -> tuple[dict, dict[str, list[dict]]]:
+def comparable_history(run: Run, metrics: list[str], size: int = 40,
+                       days: int | None = None) -> tuple[dict, dict[str, list[dict]]]:
     """Last `size` runs of the same test up to this run, oldest first, per metric.
 
     Values come from status data, so non-gated metrics work too. Bands and results come
@@ -323,7 +324,10 @@ def comparable_history(run: Run, metrics: list[str], size: int = 40) -> tuple[di
         before = run.uploaded[:19] + "||+1m"
         return {}, metric_history(run.job_name, metrics, before=before, size=size)
     ident = test_identity(doc)
-    filters = [{"range": {"ended": {"lte": doc["ended"]}}}]
+    window = {"lte": doc["ended"]}
+    if days:
+        window["gte"] = (_utc(doc["ended"]) - dt.timedelta(days=days)).isoformat()
+    filters = [{"range": {"ended": window}}]
     for field, value in ident.items():
         filters.append({"term": {f"{field}.keyword" if isinstance(value, str) else field: value}})
     data = _es("POST", f"{run.status['index']}/_search", {

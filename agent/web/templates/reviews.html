@@ -4,14 +4,14 @@
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
 <h2>Progress toward auto-apply</h2>
-<p class="muted">Per service (Jenkins job) and agent category: how often reviewers agreed with the agent. A pair qualifies for the agent to apply it on its own at {{ min_agreement|round|int }}% agreement over {{ min_reviews }} reviews of that service, independent of other services (PLAN.md 6.4). Auto-apply isn't built yet.</p>
+<p class="muted">Per service (Jenkins job) and agent label: how often reviewers agreed with the agent. Each qualifies for the agent to apply it on its own at {{ min_agreement|round|int }}% agreement over {{ min_reviews }} reviews of that service, independent of other services (PLAN.md 6.4). IMPROVED and NOISE are tracked separately even though both predict the same category. Auto-apply isn't built yet.</p>
 <table class="compact">
-  <thead><tr><th>Job</th><th>Agent category</th><th class="num">Reviewed</th><th class="num">Agreed</th><th class="num">Agreement</th><th>Status</th></tr></thead>
+  <thead><tr><th>Job</th><th>Agent label</th><th>Agent category</th><th class="num">Reviewed</th><th class="num">Agreed</th><th class="num">Agreement</th><th>Status</th></tr></thead>
   {% for p in progress %}
-  <tr><td>{{ p.job }}</td><td>{{ p.category }}</td><td class="num">{{ p.reviewed }} / {{ min_reviews }}</td><td class="num">{{ p.agreed }}</td>
+  <tr><td>{{ p.job }}</td><td>{{ p.label }}</td><td>{{ p.category }}</td><td class="num">{{ p.reviewed }} / {{ min_reviews }}</td><td class="num">{{ p.agreed }}</td>
     <td class="num">{{ "%.0f"|format(p.pct) }}%</td>
     <td><span class="tag {% if p.eligible %}pass{% elif 'below' in p.status %}fail{% endif %}">{{ p.status }}</span></td></tr>
-  {% else %}<tr><td colspan="6" class="muted">No reviews yet.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="7" class="muted">No reviews yet.</td></tr>{% endfor %}
 </table>
 
 <h2>Latest</h2>

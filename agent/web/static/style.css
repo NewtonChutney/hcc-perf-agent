@@ -37,6 +37,8 @@ button.small { font-size: 12px; padding: 1px 8px; }
 .metric { display: inline-block; margin: 0 8px 2px 0; font-size: 12px; white-space: nowrap; }
 .metric .arrow { margin-right: 3px; }
 .metric.worse { color: var(--red); } .metric.better { color: var(--green); } .metric.unknown { color: var(--amber); }
+.metric.worse.noise { color: var(--muted); }
+.tag.noise { background: #f6f8fa; border-color: var(--muted); color: var(--muted); font-weight: 600; }
 .legend { font-size: 12px; margin-top: -4px; }
 .small { font-size: 12px; }
 .chat { margin-top: 28px; max-width: 1000px; }

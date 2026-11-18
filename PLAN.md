@@ -365,10 +365,20 @@ flowchart TD
   controller. So the first surface is a web UI on rdu3, behind cluster SSO. It lists runs
   with the agent's label, shows each failing metric against its band and history, and has
   Agree / Disagree. Deployment details are in `deploy/README.md`.
-- **Labels today** are rules applied to the existing two-sided decisions. A failing metric
-  that moved in the better direction counts as an improvement; the direction is guessed
-  from the metric name until 5.7 declares it. Runs where every failing metric improved are
-  labelled `IMPROVED` with category `possible_baseline_false_positive`.
+- **Labels today** are rules applied to the existing two-sided decisions. The direction is
+  guessed from the metric name until 5.7 declares it. Worse moves are checked against the
+  agent's own band, which is the 5.2 band computed in the agent: median ± max(5%, 3 × robust
+  sigma) over comparable runs (same test) from the last 30 days, PR runs excluded, at least
+  5 runs. `fail_ratio` uses its absolute limit (0.01).
+  - `IMPROVED`: every failing metric moved in the better direction.
+  - `NOISE`: some failing metrics got worse, but each is inside its normal range.
+  - `REGRESSION`: at least one worse move is beyond its normal range, or there's too little
+    history to tell.
+  - `IMPROVED` and `NOISE` predict `possible_baseline_false_positive`. Their review records
+    are counted separately for auto-apply.
+  - Known gap until step detection (5.5) exists: a lasting regression becomes the new median
+    after enough runs and then looks like noise. Very noisy metrics get wide bands; those
+    are candidates for `gate: false`.
 - **App:** a separate Slack app for the agent (ARCHITECTURE.md section 10), with Socket
   Mode, interactivity, and every phase's scopes requested up front. Jenkins keeps
   `coreos-slack-notification-token` unchanged.

@@ -43,18 +43,21 @@ def test_load_window_covers_upload_only_timestamps():
 
 def test_auto_apply_bar_is_per_service_and_category():
     fp = "possible_baseline_false_positive"
-    reviews = ([{"job_name": "Kessel", "predicted_category": fp, "category": fp}] * 50
-               + [{"job_name": "Notif", "predicted_category": fp, "category": fp}] * 10
-               + [{"job_name": "Inv", "predicted_category": fp, "category": fp}] * 47
-               + [{"job_name": "Inv", "predicted_category": fp, "category": "true_failure"}] * 3
-               + [{"job_name": "Kessel", "predicted_category": "requires_investigation",
-                   "category": "requires_investigation"}] * 60)
-    got = {(p["job"], p["category"]): p["status"] for p in writeback.auto_apply_progress(reviews)}
+    def rv(job, label, cat, said=None):
+        return {"job_name": job, "predicted_label": label, "predicted_category": cat, "category": said or cat}
+    reviews = ([rv("Kessel", "IMPROVED", fp)] * 50
+               + [rv("Kessel", "NOISE", fp)] * 4         # same category, different label: tracked apart
+               + [rv("Notif", "IMPROVED", fp)] * 10
+               + [rv("Inv", "IMPROVED", fp)] * 47
+               + [rv("Inv", "IMPROVED", fp, "true_failure")] * 3
+               + [rv("Kessel", "REGRESSION", "requires_investigation")] * 60)
+    got = {(p["job"], p["label"]): p["status"] for p in writeback.auto_apply_progress(reviews)}
     assert got == {
-        ("Kessel", fp): "meets the bar",              # qualifies alone; no 3-service gate
-        ("Notif", fp): "40 more reviews needed",
-        ("Inv", fp): "agreement below 95%",           # 47/50 = 94%
-        ("Kessel", "requires_investigation"): "always reviewed by a person",
+        ("Kessel", "IMPROVED"): "meets the bar",          # qualifies alone; no 3-service gate
+        ("Kessel", "NOISE"): "46 more reviews needed",    # IMPROVED's record doesn't carry over
+        ("Notif", "IMPROVED"): "40 more reviews needed",
+        ("Inv", "IMPROVED"): "agreement below 95%",       # 47/50 = 94%
+        ("Kessel", "REGRESSION"): "always reviewed by a person",
     }
 
 

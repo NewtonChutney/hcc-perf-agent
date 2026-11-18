@@ -41,9 +41,9 @@
 </section>
 
 <h2>Metrics</h2>
-<p class="muted">Band = limits <code>pass_or_fail</code> used for this run. Outside band: arrow = which way the value moved, <span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>, % = distance past the band edge. "Better is" is guessed from the metric name until per-service config declares it (PLAN.md 5.7). Chart: last 40 runs of the same test{% if test %} ({% for k, v in test.items() %}{{ k.split('.')[-1] }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}){% else %} (no status data found, so this is job-wide and may mix tests){% endif %}; shaded area = band each run was checked against; red dot = FAIL; ringed = this run.</p>
+<p class="muted">Band = limits <code>pass_or_fail</code> used for this run. Outside band: arrow = which way the value moved, <span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>, % = distance past the band edge. <b>Normal range</b> = the agent's own band from comparable runs of the last 30 days (PR runs excluded): median ± max(5%, 3× robust sigma); a worse move inside it is noise (<span class="metric worse noise">≈ grey</span>). "Better is" is guessed from the metric name until per-service config declares it (PLAN.md 5.7). Chart: last 40 runs of the same test{% if test %} ({% for k, v in test.items() %}{{ k.split('.')[-1] }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}){% else %} (no status data found, so this is job-wide and may mix tests){% endif %}; shaded area = band each run was checked against; red dot = FAIL; ringed = this run.</p>
 <table>
-  <thead><tr><th>Metric</th><th>Result</th><th class="num">Value</th><th class="num">Band</th><th>Outside band</th><th>Better is</th><th>History</th></tr></thead>
+  <thead><tr><th>Metric</th><th>Result</th><th class="num">Value</th><th class="num">Band</th><th>Outside band</th><th class="num">Normal range (agent)</th><th>Better is</th><th>History</th></tr></thead>
   <tbody>
   {% for m in a.readings %}
     <tr>
@@ -51,7 +51,11 @@
       <td>{{ tag(m.decision.result) }}</td>
       <td class="num">{{ m.decision.value|num }}</td>
       <td class="num nowrap">{{ m.decision.lower|num }} – {{ m.decision.upper|num }}</td>
-      <td class="nowrap">{% if m.decision.result == "FAIL" %}{{ metric_chip(m, m.verdict) }}{% endif %}</td>
+      <td class="nowrap">{% if m.decision.result == "FAIL" %}{{ metric_chip(m, m.verdict ~ (" (noise)" if m.verdict == "worse" and m.beyond_noise == false else "")) }}{% endif %}</td>
+      <td class="num nowrap">{% if m.noise %}{{ m.noise.lower|num }} – {{ m.noise.upper|num }}<br>
+        <span class="muted small">median {{ m.noise.median|num }} ±{{ "%.1f"|format(m.noise.half_width_pct) }}%{% if m.noise.basis == "floor" %} (5% floor){% endif %} · {{ m.noise.n }} runs</span>
+        {% elif m.verdict == "worse" and m.beyond_noise is not none %}<span class="muted small">absolute limit</span>
+        {% else %}<span class="muted small">too few runs</span>{% endif %}</td>
       <td class="nowrap">{% if m.better == "higher" %}↑ higher{% elif m.better == "lower" %}↓ lower{% else %}<span class="muted">?</span>{% endif %}</td>
       <td>{{ charts.get(m.decision.metric, "") }}</td>
     </tr>

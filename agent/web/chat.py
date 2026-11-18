@@ -20,7 +20,7 @@ import time
 import requests
 
 from . import aws, es
-from .rules import assess, better_direction
+from .rules import better_direction, evaluate, evaluate_many
 
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.enmaas.devshift.net/v1").rstrip("/")
 LLM_MODEL = os.environ.get("LLM_MODEL", "rits/zai-org/glm-5-3")
@@ -81,7 +81,9 @@ How today's check works: check_by_min_max_0_1 takes min and max of the last ~50 
 runs and fails a metric outside that range in EITHER direction, so a faster run can fail.
 Each decision in tool results carries `better` (guessed from the metric name: "lower",
 "higher", or null) and `verdict` ("worse", "better", "unknown") so you can tell real
-regressions from improvements.
+regressions from improvements. Worse moves also carry `beyond_normal_noise` and
+`normal_range`: the agent's own band from comparable runs (median +/- max(5%, 3x robust
+sigma)). A worse move inside the normal range is noise, not a regression (label NOISE).
 
 Rules:
 - Use tools to answer; call several if needed. Never invent or estimate numbers: every
@@ -109,9 +111,17 @@ def _run_or_error(job: str, build) -> tuple[es.Run | None, dict | None]:
 
 def _reading(r) -> dict:
     d = r.decision
-    return {"metric": d.metric, "result": d.result, "value": d.value, "lower": d.lower, "upper": d.upper,
-            "better": r.better, "verdict": r.verdict if d.result == "FAIL" else None,
-            "outside_band_pct": round(r.deviation_pct, 2) if r.deviation_pct is not None else None}
+    out = {"metric": d.metric, "result": d.result, "value": d.value, "lower": d.lower, "upper": d.upper,
+           "better": r.better, "verdict": r.verdict if d.result == "FAIL" else None,
+           "outside_band_pct": round(r.deviation_pct, 2) if r.deviation_pct is not None else None}
+    if r.noise:
+        out["normal_range"] = {"median": r.noise.median, "lower": r.noise.lower, "upper": r.noise.upper,
+                               "half_width_pct": r.noise.half_width_pct, "robust_cv_pct": r.noise.robust_cv_pct,
+                               "runs": r.noise.n}
+    if r.verdict == "worse":
+        out["beyond_normal_noise"] = r.beyond_noise
+        out["vs_median_pct"] = r.vs_median_pct
+    return out
 
 
 def tool_list_jobs(days: int = 30) -> dict:
@@ -124,13 +134,13 @@ def tool_list_runs(job: str | None = None, days: int = 7, result: str | None = N
     if not include_pr:
         runs = [r for r in runs if not (r.status and r.status["pr"])]
     rows = []
-    for r in runs[: max(1, min(int(limit), 50))]:
-        a = assess(r)
+    shown = runs[: max(1, min(int(limit), 50))]
+    for r, a in zip(shown, evaluate_many(shown)):
         rows.append({
             "job": r.job_name, "build": r.build_number, "finished_utc": r.uploaded[:19],
             "result": r.result, "label": a.label, "pr": bool(r.status and r.status["pr"]),
             "test": r.status["name"] if r.status else None,
-            "failing": [{"metric": x.short_name, "verdict": x.verdict,
+            "failing": [{"metric": x.short_name, "verdict": x.verdict, "beyond_normal_noise": x.beyond_noise,
                          "outside_band_pct": round(x.deviation_pct, 2) if x.deviation_pct is not None else None}
                         for x in a.readings if x.decision.result == "FAIL"],
         })
@@ -141,7 +151,7 @@ def tool_get_run(job: str, build) -> dict:
     run, err = _run_or_error(job, build)
     if err:
         return err
-    a = assess(run)
+    a = evaluate(run)
     s = run.status or {}
     return {
         "job": job, "build": run.build_number, "build_url": run.build_url, "result": run.result,

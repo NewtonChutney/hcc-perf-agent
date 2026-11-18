@@ -44,15 +44,21 @@ NEVER_AUTO = {"true_failure", "requires_investigation"}
 
 
 def auto_apply_progress(reviews: list[dict]) -> list[dict]:
-    """Per (job, agent category): reviews, agreement, and whether it meets the bar."""
-    groups: dict[tuple[str, str], list[int]] = {}
+    """Per (job, agent label): reviews, agreement, and whether it meets the bar.
+
+    Grouped by label, not only category: IMPROVED and NOISE both predict
+    possible_baseline_false_positive, but agreement on clear improvements says nothing
+    about calls where a metric got worse, so each label earns auto-apply separately.
+    """
+    groups: dict[tuple[str, str, str], list[int]] = {}
     for r in reviews:
         if r.get("predicted_category"):
-            g = groups.setdefault((r.get("job_name") or "?", r["predicted_category"]), [0, 0])
+            key = (r.get("job_name") or "?", r.get("predicted_label") or "?", r["predicted_category"])
+            g = groups.setdefault(key, [0, 0])
             g[0] += 1
             g[1] += r.get("category") == r["predicted_category"]
     out = []
-    for (job, cat), (n, agreed) in sorted(groups.items()):
+    for (job, label, cat), (n, agreed) in sorted(groups.items()):
         pct = 100 * agreed / n
         if cat in NEVER_AUTO:
             status = "always reviewed by a person"
@@ -62,8 +68,8 @@ def auto_apply_progress(reviews: list[dict]) -> list[dict]:
             status = f"agreement below {AUTO_APPLY_MIN_AGREEMENT:g}%"
         else:
             status = "meets the bar"
-        out.append({"job": job, "category": cat, "reviewed": n, "agreed": agreed, "pct": pct,
-                    "status": status, "eligible": status == "meets the bar"})
+        out.append({"job": job, "label": label, "category": cat, "reviewed": n, "agreed": agreed,
+                    "pct": pct, "status": status, "eligible": status == "meets the bar"})
     return out
 log = logging.getLogger("hcc-perf-agent.writeback")
 

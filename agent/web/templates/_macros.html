@@ -1,10 +1,12 @@
 {# Arrow = which way the value moved out of its band; color = whether that is good. #}
+{# Worse but within the metric's normal range: grey with ≈. #}
 {% macro metric_chip(m, name=None) -%}
-<span class="metric {{ m.verdict }}" title="{{ m.decision.metric }}: {{ m.decision.value|num }} vs band {{ m.decision.lower|num }} – {{ m.decision.upper|num }}; {{ ('higher' if m.better == 'higher' else 'lower') ~ ' is better' if m.better else 'direction unknown' }}">
-  <span class="arrow">{{ m.arrow }}</span>{{ name or m.short_name }} {{ m.deviation_pct|pct }}</span>
+{% set within = m.verdict == "worse" and m.beyond_noise == false %}
+<span class="metric {{ m.verdict }}{% if within %} noise{% endif %}" title="{{ m.decision.metric }}: {{ m.decision.value|num }} vs band {{ m.decision.lower|num }} – {{ m.decision.upper|num }}; {{ ('higher' if m.better == 'higher' else 'lower') ~ ' is better' if m.better else 'direction unknown' }}{% if m.noise %}; normal range {{ m.noise.lower|num }} – {{ m.noise.upper|num }} (median {{ m.noise.median|num }} ±{{ '%.1f'|format(m.noise.half_width_pct) }}%, {{ m.noise.n }} runs){% endif %}{% if within %}: within normal noise{% endif %}">
+  <span class="arrow">{{ m.arrow }}</span>{% if within %}≈ {% endif %}{{ name or m.short_name }} {{ m.deviation_pct|pct }}</span>
 {%- endmacro %}
 
-{% set LABEL_ICONS = {"PASS": "✓", "FAIL": "✗", "ERROR": "!", "REGRESSION": "⚠", "IMPROVED": "★", "UNCLEAR": "?"} %}
+{% set LABEL_ICONS = {"PASS": "✓", "FAIL": "✗", "ERROR": "!", "REGRESSION": "⚠", "IMPROVED": "★", "UNCLEAR": "?", "NOISE": "≈"} %}
 {% macro tag(label) -%}
 <span class="tag {{ label|lower }}">{{ LABEL_ICONS.get(label, "") }} {{ label }}</span>
 {%- endmacro %}

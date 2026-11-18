@@ -68,3 +68,34 @@ def test_number_format_has_no_exponent():
 def test_deviation_is_relative_to_band_edge():
     r = read_decision(d("x.95percentile", 110, 50, 100))
     assert (r.side, r.verdict, round(r.deviation_pct, 1)) == ("above", "worse", 10.0)
+
+
+def test_noise_band_uses_the_larger_of_floor_and_measured_noise():
+    from agent.web.rules import noise_band
+    quiet = noise_band([100, 100.5, 99.5, 100.2, 99.8, 100.1])   # tiny spread -> 5% floor wins
+    assert quiet.basis == "floor" and round(quiet.half_width_pct, 1) == 5.0
+    noisy = noise_band([100, 120, 80, 110, 90, 105, 95])          # big spread -> 3 x robust sigma wins
+    assert noisy.basis == "noise" and noisy.half_width_pct > 5
+    assert noise_band([1, 2, 3]) is None                         # too few runs
+    assert noise_band([0, 0, 0, 0, 0, 0]) is None                # median 0 -> no relative band
+
+
+def test_worse_within_normal_noise_is_NOISE_not_REGRESSION():
+    from agent.web.rules import noise_band
+    # InsightsKesselK6_runnerAPI #4451: median_response_time 36.16 ms, min/max band 32.01-36.02,
+    # comparable history median ~35.5 ms with ~2% robust CV.
+    history = [35.5, 35.0, 36.1, 34.8, 35.9, 35.3, 36.3, 35.6, 34.9, 35.7]
+    m = "results.requests.SUMMARY.median_response_time"
+    a = assess(run(d(m, 36.157, 32.008, 36.023)), {m: noise_band(history)})
+    assert a.label == "NOISE" and a.predicted_category == "possible_baseline_false_positive"
+    assert a.readings[0].beyond_noise is False
+    # Well beyond the normal range stays a regression.
+    assert assess(run(d(m, 45.0, 32.008, 36.023)), {m: noise_band(history)}).label == "REGRESSION"
+    # No history to judge -> conservative: regression.
+    assert assess(run(d(m, 36.157, 32.008, 36.023)), {m: None}).label == "REGRESSION"
+
+
+def test_fail_ratio_uses_absolute_limit():
+    m = "results.requests.SUMMARY.fail_ratio"
+    assert assess(run(d(m, 0.004, 0, 0.001)), {m: None}).label == "NOISE"       # under 1%
+    assert assess(run(d(m, 0.05, 0, 0.001)), {m: None}).label == "REGRESSION"   # over 1%
