@@ -1,0 +1,53 @@
+{# Results area of the CPT runs page. Rendered inside runs.html, and on its own for
+   X-Partial requests from static/runs.js (filters update without a page reload). #}
+{% from "_macros.html" import metric_chip, tag %}
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<p class="counts">
+  {{ rows|length }} run(s):
+  {% for label, n in counts.most_common() %}{{ tag(label) }} {{ n }} &nbsp; {% endfor %}
+  {% if pending %}· <a href="?days={{ days }}&job={{ job }}&result={{ result }}&label={{ label }}&review=pending{% if show_pr %}&show_pr=true{% endif %}" class="pending-link"><span class="tag pending">● review pending</span> {{ pending }}</a>{% endif %}
+</p>
+<p class="legend muted">Arrow = which way the value moved out of its band. <span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>, <span class="metric unknown">amber = direction unknown</span>, <span class="metric worse noise">≈ grey = worse but within the metric's normal run-to-run range</span>. % = distance outside pass_or_fail's band. <b>NOISE</b> = every worse move is within normal range (median ± max(5%, 3× robust sigma) of comparable runs).</p>
+
+<table>
+  <thead><tr><th>Finished (UTC)</th><th>Job</th><th>Build</th><th>Test</th><th>Result</th><th>Agent label</th><th>Failing metrics</th><th>Review</th></tr></thead>
+  <tbody>
+  {% for r, a, rv in rows %}
+    <tr>
+      <td class="nowrap">{{ r.uploaded|short_time }}</td>
+      <td>{{ r.job_name }}</td>
+      <td><a href="/runs/{{ r.job_name }}/{{ r.build_number }}">#{{ r.build_number }}</a>
+        {% if r.status and r.status.pr %}<span class="tag pr">PR</span>{% endif %}</td>
+      <td>{{ r.status.name if r.status else "" }}</td>
+      <td class="nowrap">{% if r.status and r.status.result and r.status.result != r.result %}<s class="muted" title="pass_or_fail said {{ r.result }}">{{ r.result }}</s> {{ tag(r.status.result) }}{% else %}{{ tag(r.result) }}{% endif %}</td>
+      <td>{{ tag(a.label) }}</td>
+      <td class="metrics">
+        {% for m in a.readings if m.decision.result == "FAIL" %}{{ metric_chip(m) }} {% endfor %}
+      </td>
+      <td class="review-cell">
+        {% if rv %}
+          <b>{{ rv.reviewer|who }}</b> said
+          <span class="tag {% if rv.category == rv.predicted_category %}pass{% else %}fail{% endif %}"
+                title="{% if rv.category == rv.predicted_category %}agreed with the agent{% else %}agent said {{ rv.predicted_category }}{% endif %}{% if rv.explanation %}: {{ rv.explanation }}{% endif %}">{{ rv.category }}</span>
+        {% elif a.predicted_category %}
+          <a href="/runs/{{ r.job_name }}/{{ r.build_number }}#review" class="tag pending">● pending</a>
+          {% if a.label == "IMPROVED" %}
+          {# Every failing metric moved in the better direction: one click to agree. #}
+          {% set new_result = result_for[a.predicted_category] %}
+          <form method="post" action="/runs/{{ r.job_name }}/{{ r.build_number }}/review" class="inline-agree">
+            <input type="hidden" name="verdict" value="agree">
+            <input type="hidden" name="next" value="{{ here }}">
+            <button class="agree small"
+              title="Record {{ a.predicted_category }}{% if can_write and r.status and r.status.result != new_result %} and set the result {{ r.status.result }} → {{ new_result }} (enters the baseline){% endif %}">
+              ✓ Agree{% if can_write and r.status and r.status.result != new_result %} → {{ new_result }}{% endif %}</button>
+          </form>
+          {% endif %}
+        {% endif %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="8" class="muted">No runs match.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>

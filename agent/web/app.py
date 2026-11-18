@@ -90,10 +90,17 @@ def runs_page(request: Request, days: int = 7, job: str = "", result: str = "FAI
     counts = collections.Counter(a.label for _, a, _ in rows)
     user = current_user(request)
     here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
-    return templates.TemplateResponse(request, "runs.html", dict(
+    # static/runs.js asks for just the results area (X-Partial: 1) when a filter changes; the
+    # URL stays the same as the full page's, so responses must not be cached interchangeably.
+    partial = request.headers.get("x-partial") == "1"
+    response = templates.TemplateResponse(request, "_runs_results.html" if partial else "runs.html", dict(
         rows=rows, jobs=jobs, days=days, job=job, result=result, show_pr=show_pr, review=review,
         label=label, labels=LABELS, pending=pending, counts=counts, error=error, user=user, here=here,
         can_write=writeback.allowed(user), result_for=writeback.RESULT_FOR_CATEGORY))
+    response.headers["Vary"] = "X-Partial"
+    if partial:
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @app.get("/runs/{job}/{number}", response_class=HTMLResponse)
