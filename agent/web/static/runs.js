@@ -55,7 +55,8 @@
   form.addEventListener("input", e => {
     if (e.target.name !== "days") return;
     clearTimeout(timer);
-    timer = setTimeout(() => { if (form.days.checkValidity()) load(queryFromForm(), true); }, 500);
+    // Out of range (the input's min/max): say so instead of silently not updating.
+    timer = setTimeout(() => { if (form.days.reportValidity()) load(queryFromForm(), true); }, 500);
   });
   form.addEventListener("submit", e => { e.preventDefault(); load(queryFromForm(), true); });
 

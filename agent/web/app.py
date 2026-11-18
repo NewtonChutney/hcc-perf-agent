@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import alerts, chat, es, fmt, writeback
+from . import alerts, chat, es, fmt, rules, writeback
 from .charts import sparkline
 from .rules import CATEGORIES, CATEGORY_HELP, LABEL_CATEGORY, LABELS, evaluate, evaluate_many
 
@@ -35,6 +35,9 @@ templates.env.globals.update(
     category_help=CATEGORY_HELP,
     label_category=LABEL_CATEGORY,
     result_for=writeback.RESULT_FOR_CATEGORY,
+    noise_k=rules.NOISE_K,
+    noise_floor_pct=rules.NOISE_FLOOR_PCT,
+    noise_days=rules.NOISE_DAYS,
 )
 templates.env.filters["num"] = fmt.num
 templates.env.filters["pct"] = fmt.pct
@@ -110,12 +113,14 @@ def _filtered_runs(days: int, job: str, result: str, show_pr: bool, review: str,
 @app.get("/", response_class=HTMLResponse)
 def runs_page(request: Request, days: int = 7, job: str = "", result: str = "", show_pr: bool = False,
               review: str = "", label: str = ""):
-    days = max(1, min(days, MAX_DAYS))
     error = None
     rows, jobs, matched = [], [], 0
     try:
-        rows, matched = _filtered_runs(days, job, result, show_pr, review, label)
         jobs = es.job_names()
+        if not 1 <= days <= MAX_DAYS:
+            error = f"The runs page goes back 1 to {MAX_DAYS} days; {days} is out of range."
+        else:
+            rows, matched = _filtered_runs(days, job, result, show_pr, review, label)
     except requests.RequestException as exc:
         error = f"Elasticsearch request failed: {exc}"
     # A run needs a review when the agent made a call on it (anything but PASS) and nobody has reviewed it.
@@ -181,7 +186,7 @@ def submit_review(request: Request, job: str, number: str,
     run = es.get_run(job, number)
     if run is None:
         raise HTTPException(404)
-    a = evaluate(run)
+    a = evaluate(run, all_metrics=True)  # same prediction the run page showed
     if verdict == "agree":
         category = a.predicted_category or ""
     if category not in CATEGORIES:

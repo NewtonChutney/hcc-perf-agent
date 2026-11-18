@@ -20,9 +20,14 @@
 </p>
 {% endif %}
 
-{% if a.predicted_category %}
+{# Every run can be reviewed, passed ones included (e.g. a slow run that passed and entered
+   the baseline). Agree needs a prediction; a correction doesn't. #}
 <form method="post" action="/runs/{{ run.job_name }}/{{ run.build_number }}/review" class="review">
+  {% if a.predicted_category %}
   <p>Heuristic prediction: <span class="tag">{{ a.predicted_category }}</span> <span class="muted small">from rules on the decisions and run history, not an LLM</span></p>
+  {% else %}
+  <p>Heuristic prediction: <span class="muted">none; every metric is inside its band and its normal range.</span> You can still record a category.</p>
+  {% endif %}
   {% if writeback_enabled() and run.status %}
   <p class="small">
     {% if can_write %}
@@ -34,9 +39,9 @@
     {% endif %}
   </p>
   {% endif %}
-  <button name="verdict" value="agree" class="agree">Agree</button>
-  <details>
-    <summary>Disagree…</summary>
+  {% if a.predicted_category %}<button name="verdict" value="agree" class="agree">Agree</button>{% endif %}
+  <details{% if not a.predicted_category %} open{% endif %}>
+    <summary>{% if a.predicted_category %}Disagree…{% else %}Record a category{% endif %}</summary>
     <label>Correct category
       <select name="category">
         <option value="">choose</option>
@@ -45,16 +50,13 @@
     </label>
     <label>Bug URL (required for known_issue) <input type="url" name="bug_url" placeholder="https://redhat.atlassian.net/browse/..."></label>
     <label>Why <textarea name="explanation" rows="3"></textarea></label>
-    <button name="verdict" value="disagree" class="disagree">Save correction</button>
+    <button name="verdict" value="disagree" class="disagree">{% if a.predicted_category %}Save correction{% else %}Save review{% endif %}</button>
   </details>
 </form>
 <details class="category-help">
   <summary>What the categories mean</summary>
   {% include "_categories.html" %}
 </details>
-{% else %}
-<p class="muted">Nothing to review: the run passed.</p>
-{% endif %}
 {% if run.overridden %}
 <p class="small">pass_or_fail said <b>{{ run.result }}</b>; the stored result is now <b>{{ run.current_result }}</b> (changed by a review or ReportPortal).</p>
 {% endif %}

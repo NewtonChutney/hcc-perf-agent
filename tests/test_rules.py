@@ -119,6 +119,21 @@ def test_recurring_one_off_with_same_images_is_OUTLIER():
     assert assess(r, bands).label == "REGRESSION"  # no lookback
 
 
+def test_passed_run_worse_than_normal_is_flagged_when_bands_cover_it():
+    from agent.web.rules import Recurrence, noise_band
+    # InsightsKesselK6_runnerAPI #4299: p95 2356 ms passed pass_or_fail (band up to ~2380 from old
+    # slow runs) but is ~17% over the 30-day median.
+    m = "results.requests.SUMMARY.95percentile"
+    bands = {m: noise_band([2105, 2089, 2106, 2123, 1910, 1944, 1979, 2135, 1994, 1961, 2020, 2050])}
+    r = run(d(m, 2356.9, 1982.2, 2380.3, result="PASS"))
+    assert assess(r).label == "PASS"            # lists don't fetch bands for passed metrics
+    assert assess(r, {m: None}).label == "PASS"  # no history: nothing to say
+    a = assess(r, bands, Recurrence("4280", [], {m: (11, "3404")}, []))
+    assert a.label == "OUTLIER" and a.predicted_category == "environment_failure"
+    assert a.summary.startswith("pass_or_fail passed this run")
+    assert assess(r, bands).label == "REGRESSION"
+
+
 def test_failures_are_never_an_outlier():
     from agent.web.rules import Recurrence, noise_band
     m = "results.requests.SUMMARY.num_failures"

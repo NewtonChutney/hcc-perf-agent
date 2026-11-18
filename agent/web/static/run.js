@@ -13,6 +13,7 @@
     if (e.submitter && e.submitter.name) body.set(e.submitter.name, e.submitter.value);  // Agree or Save correction
     const buttons = form.querySelectorAll("button");
     buttons.forEach(b => b.disabled = true);
+    const label = e.submitter && e.submitter.textContent;
     if (e.submitter) e.submitter.textContent = "Saving…";
     section.classList.add("loading");
     try {
@@ -26,7 +27,7 @@
       section.scrollIntoView({block: "nearest", behavior: "smooth"});
     } catch (err) {
       buttons.forEach(b => b.disabled = false);
-      if (e.submitter) e.submitter.textContent = e.submitter.value === "agree" ? "Agree" : "Save correction";
+      if (e.submitter) e.submitter.textContent = label;
       let note = form.querySelector(".save-error");
       if (!note) {
         note = document.createElement("p");

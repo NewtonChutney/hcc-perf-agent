@@ -199,6 +199,30 @@ def judge_noise(r: MetricReading, band: NoiseBand | None) -> MetricReading:
     return r
 
 
+def judge_passed(r: MetricReading, band: NoiseBand | None) -> MetricReading:
+    """For a metric pass_or_fail passed: is it worse than its normal range anyway? Its
+    min/max band can be much wider than the noise band (old outliers widen it), so a slow
+    run can pass and enter the baseline. Marks beyond_noise only when it is."""
+    d = r.decision
+    if d.result != "PASS" or d.value is None or r.better is None:
+        return r
+    limit = ABSOLUTE_LIMITS.get(d.metric.split(".")[-1])
+    if limit is not None:
+        if r.better == "lower" and d.value > limit:
+            r.beyond_noise = True
+    elif band is not None:
+        r.noise = band
+        r.vs_median_pct = 100 * (d.value - band.median) / abs(band.median)
+        if d.value > band.upper if r.better == "lower" else d.value < band.lower:
+            r.beyond_noise = True
+    return r
+
+
+def _judged(readings: list[MetricReading], bands: dict[str, NoiseBand | None]) -> list[MetricReading]:
+    return [judge_passed(judge_noise(r, bands.get(r.decision.metric)), bands.get(r.decision.metric))
+            for r in readings]
+
+
 def read_decision(d: Decision) -> MetricReading:
     better = better_direction(d.metric)
     if d.result != "FAIL" or d.value is None:
@@ -306,7 +330,7 @@ def evaluate(run: Run, all_metrics: bool = False) -> Assessment:
                       and p.get("run_result") != "ERROR"
                       and isinstance(p.get("value"), (int, float)) and not isinstance(p.get("value"), bool)]
             bands[m] = noise_band(values)
-    rec = recurrence(run, [judge_noise(r, bands.get(r.decision.metric)) for r in readings]) if bands else None
+    rec = recurrence(run, _judged(readings, bands)) if bands else None
     return assess(run, bands, rec)
 
 
@@ -334,10 +358,11 @@ def _evaluate_or_fallback(run: Run) -> Assessment:
 def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
            rec: Recurrence | None = None) -> Assessment:
     """Label a run. Without `bands` (no history fetched), worse moves count as regressions;
-    without `rec`, moves beyond noise do."""
+    without `rec`, moves beyond noise do. Passed metrics are checked against their noise band
+    only when `bands` covers them (the run page asks for every metric; lists don't)."""
     readings = [read_decision(d) for d in run.decisions]
     if bands is not None:
-        readings = [judge_noise(r, bands.get(r.decision.metric)) for r in readings]
+        readings = _judged(readings, bands)
     if rec is not None:
         for r in readings:
             if r.decision.metric in rec.seen and r.beyond_noise:
@@ -348,6 +373,11 @@ def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
                           "missing from this run. The test missing data is an automation_bug; the environment "
                           "breaking is an environment_failure. Check the Jenkins console.", readings)
     if not failed:
+        slipped = [r for r in readings if r.decision.result == "PASS" and r.beyond_noise]
+        if slipped:
+            return _beyond_noise(slipped, rec, readings,
+                                 f"pass_or_fail passed this run (its min/max band is wider), yet {len(slipped)} "
+                                 "metric(s) are worse than their normal range")
         return Assessment("PASS", "All gated metrics are inside their bands.", readings)
     worse = [r for r in failed if r.verdict == "worse"]
     better = [r for r in failed if r.verdict == "better"]
@@ -356,41 +386,14 @@ def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
         beyond = [r for r in worse if r.beyond_noise is not False]  # unknown counts as beyond
         if beyond:
             unknown = sum(r.beyond_noise is None for r in beyond)
-            moved = (f"{len(beyond)} metric(s) moved in the worse direction beyond normal noise"
-                     + (f" ({unknown} with too little history to tell)" if unknown else "")
-                     + (f", {len(worse) - len(beyond)} worse but within noise" if len(worse) > len(beyond) else "")
-                     + (f", {len(better)} improved" if better else ""))
-            prev = f"#{rec.previous_build}" if rec and rec.previous_build else "the previous run"
-            failures = [r.short_name for r in beyond if _NOT_OUTLIER.search(r.decision.metric)]
-            if (rec and rec.image_changes == [] and not rec.image_unknown and not rec.sustained and not failures
-                    and all(r.seen is not None and r.seen >= OUTLIER_MIN_SEEN for r in beyond)):
-                seen = ", ".join(f"{r.short_name} {r.seen} runs" + (f" (latest #{r.seen_last})" if r.seen_last else "")
-                                 for r in beyond)
-                return Assessment("OUTLIER",
-                                  f"{moved}, but nothing changed and it has happened before: same images as {prev}, "
-                                  f"which was normal, and one-off runs of this test at least this bad (next run back "
-                                  f"to normal) in the last {OUTLIER_DAYS} days: {seen}. Looks like a recurring one-off "
-                                  "run, not a code change; keep it out of the baseline.", readings)
-            if rec and rec.image_changes:
-                why = f" Images changed since {prev}: {', '.join(rec.image_changes)}."
-            elif rec and rec.image_changes == [] and rec.image_unknown:
-                why = (f" No image tag changed since {prev}, but {', '.join(rec.image_unknown)} use a moving tag with "
-                       "no build time recorded, so whether the code changed is unknown.")
-            elif rec and rec.image_changes == [] and failures:
-                why = f" Same images as {prev}, but failures rose ({', '.join(failures)}), which is never treated as a one-off."
-            elif rec and rec.image_changes == [] and rec.sustained:
-                why = f" Same images as {prev}, but {prev} was beyond normal noise too: a sustained shift, not a one-off."
-            elif rec and rec.image_changes == []:
-                seen = ", ".join(f"{r.short_name} {r.seen}" if r.seen is not None else f"{r.short_name} unknown"
-                                 for r in beyond)
-                why = (f" Same images as {prev}, but fewer than {OUTLIER_MIN_SEEN} earlier one-offs this bad in "
-                       f"the last {OUTLIER_DAYS} days ({seen}).")
-            else:
-                why = ""
-            return Assessment("REGRESSION", moved + "." + why, readings)
+            return _beyond_noise(beyond, rec, readings,
+                                 f"{len(beyond)} metric(s) moved in the worse direction beyond normal noise"
+                                 + (f" ({unknown} with too little history to tell)" if unknown else "")
+                                 + (f", {len(worse) - len(beyond)} worse but within noise" if len(worse) > len(beyond) else "")
+                                 + (f", {len(better)} improved" if better else ""))
         return Assessment("NOISE",
                           f"{len(worse)} metric(s) moved in the worse direction, but each is within its normal "
-                          f"run-to-run range (median ± max({NOISE_FLOOR_PCT:g}%, {NOISE_K:g}× robust sigma) over "
+                          f"run-to-run range (median ± max({NOISE_FLOOR_PCT:g}%, {NOISE_K:g} × robust CV) over "
                           f"comparable runs of the last {NOISE_DAYS} days). The min/max band is tighter than "
                           "the test's own noise.", readings)
     if better and not unknown:
@@ -398,3 +401,38 @@ def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
                           f"All {len(better)} failing metric(s) moved in the better direction. "
                           "Today's two-sided check fails these; the baseline may be stale.", readings)
     return Assessment("UNCLEAR", "Direction unknown for some failing metrics; needs a human look.", readings)
+
+
+def _beyond_noise(beyond: list[MetricReading], rec: Recurrence | None, readings: list[MetricReading],
+                  moved: str) -> Assessment:
+    """OUTLIER or REGRESSION for metrics worse beyond their noise band (rule 3)."""
+    prev = f"#{rec.previous_build}" if rec and rec.previous_build else "the previous run"
+    failures = [r.short_name for r in beyond if _NOT_OUTLIER.search(r.decision.metric)]
+    # rec can cover more metrics than these (the run page judges passed ones too); only these count.
+    sustained = bool(rec) and any(r.decision.metric in rec.sustained for r in beyond)
+    if (rec and rec.image_changes == [] and not rec.image_unknown and not sustained and not failures
+            and all(r.seen is not None and r.seen >= OUTLIER_MIN_SEEN for r in beyond)):
+        seen = ", ".join(f"{r.short_name} {r.seen} runs" + (f" (latest #{r.seen_last})" if r.seen_last else "")
+                         for r in beyond)
+        return Assessment("OUTLIER",
+                          f"{moved}, but nothing changed and it has happened before: same images as {prev}, "
+                          f"which was normal, and one-off runs of this test at least this bad (next run back "
+                          f"to normal) in the last {OUTLIER_DAYS} days: {seen}. Looks like a recurring one-off "
+                          "run, not a code change; keep it out of the baseline.", readings)
+    if rec and rec.image_changes:
+        why = f" Images changed since {prev}: {', '.join(rec.image_changes)}."
+    elif rec and rec.image_changes == [] and rec.image_unknown:
+        why = (f" No image tag changed since {prev}, but {', '.join(rec.image_unknown)} use a moving tag with "
+               "no build time recorded, so whether the code changed is unknown.")
+    elif rec and rec.image_changes == [] and failures:
+        why = f" Same images as {prev}, but failures rose ({', '.join(failures)}), which is never treated as a one-off."
+    elif rec and rec.image_changes == [] and sustained:
+        why = f" Same images as {prev}, but {prev} was beyond normal noise too: a sustained shift, not a one-off."
+    elif rec and rec.image_changes == []:
+        seen = ", ".join(f"{r.short_name} {r.seen}" if r.seen is not None else f"{r.short_name} unknown"
+                         for r in beyond)
+        why = (f" Same images as {prev}, but fewer than {OUTLIER_MIN_SEEN} earlier one-offs this bad in "
+               f"the last {OUTLIER_DAYS} days ({seen}).")
+    else:
+        why = ""
+    return Assessment("REGRESSION", moved + "." + why, readings)

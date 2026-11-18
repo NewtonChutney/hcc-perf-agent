@@ -41,9 +41,9 @@
 </section>
 
 <h2>Metrics</h2>
-<p class="muted">Band = limits <code>pass_or_fail</code> used for this run. Outside band: arrow = which way the value moved, <span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>, % = distance past the band edge. <b>Normal range</b> = a band computed from comparable runs of the last 30 days (PR runs excluded): median ± max(5%, 3× robust sigma); a worse move inside it is noise (<span class="metric worse noise">≈ grey</span>). "Better is" is guessed from the metric name until per-service config declares it (PLAN.md 5.7). Chart: last 40 runs of the same test{% if test %} ({% for k, v in test.items() %}{{ k.split('.')[-1] }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}){% else %} (no status data found, so this is job-wide and may mix tests){% endif %}; shaded area = band each run was checked against; red dot = FAIL; ringed = this run.</p>
+<p class="muted">Band = limits <code>pass_or_fail</code> used for this run. Outside band: arrow = which way the value moved, <span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>, % = distance past the band edge. <b>Normal range</b> = median ± max({{ noise_floor_pct|num }}%, {{ noise_k|num }} × robust CV), over comparable runs (same test, last {{ noise_days }} days, PR runs excluded). Robust CV = 1.4826 × MAD / median, a spread measure that ignores occasional outliers; the {{ noise_floor_pct|num }}% floor applies when the test is quieter than that. A worse move inside it is noise (<span class="metric worse noise">≈ grey</span>). "Better is" is guessed from the metric name until per-service config declares it (PLAN.md 5.7). Chart: last 40 runs of the same test{% if test %} ({% for k, v in test.items() %}{{ k.split('.')[-1] }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}){% else %} (no status data found, so this is job-wide and may mix tests){% endif %}; shaded area = band each run was checked against; red dot = FAIL; ringed = this run.</p>
 <table>
-  <thead><tr><th>Metric</th><th>Result</th><th class="num">Value</th><th class="num">Band</th><th>Outside band</th><th class="num">Normal range (agent)</th><th>Better is</th><th>History</th></tr></thead>
+  <thead><tr><th>Metric</th><th>Result</th><th class="num">Value</th><th class="num">Band</th><th>Outside band</th><th class="num" title="median ± max({{ noise_floor_pct|num }}%, {{ noise_k|num }} × robust CV) over comparable runs">Normal range</th><th>Better is</th><th>History</th></tr></thead>
   <tbody>
   {% for m in a.readings if m.decision.metric != "?" %}
     <tr>
@@ -51,9 +51,12 @@
       <td>{{ tag(m.decision.result) }}</td>
       <td class="num">{{ m.decision.value|num }}</td>
       <td class="num nowrap">{{ m.decision.lower|num }} – {{ m.decision.upper|num }}</td>
-      <td class="nowrap">{% if m.decision.result == "FAIL" %}{{ metric_chip(m, m.verdict ~ (" (noise)" if m.verdict == "worse" and m.beyond_noise == false else "")) }}{% endif %}</td>
+      <td class="nowrap">{% if m.decision.result == "FAIL" %}{{ metric_chip(m, m.verdict ~ (" (noise)" if m.verdict == "worse" and m.beyond_noise == false else "")) }}
+        {% elif m.beyond_noise %}<span class="metric worse" title="Inside pass_or_fail's band, but outside the normal range">worse than normal{% if m.vs_median_pct is not none %} ({{ "%+.1f"|format(m.vs_median_pct) }}% vs median){% endif %}</span>{% endif %}</td>
       <td class="num nowrap">{% if m.noise %}{{ m.noise.lower|num }} – {{ m.noise.upper|num }}<br>
-        <span class="muted small">median {{ m.noise.median|num }} ±{{ "%.1f"|format(m.noise.half_width_pct) }}%{% if m.noise.basis == "floor" %} (5% floor){% endif %} · {{ m.noise.n }} runs</span>
+        <span class="muted small">median {{ m.noise.median|num }} ± {{ "%.1f"|format(m.noise.half_width_pct) }}%<br>
+        {% if m.noise.basis == "floor" %}= {{ noise_floor_pct|num }}% floor ({{ noise_k|num }} × {{ "%.1f"|format(m.noise.robust_cv_pct) }}% CV is less)
+        {% else %}= {{ noise_k|num }} × {{ "%.1f"|format(m.noise.robust_cv_pct) }}% robust CV{% endif %} · {{ m.noise.n }} runs</span>
         {% elif m.verdict == "worse" and m.beyond_noise is not none %}<span class="muted small">absolute limit</span>
         {% else %}<span class="muted small">too few runs</span>{% endif %}</td>
       <td class="nowrap">{% if m.better == "higher" %}↑ higher{% elif m.better == "lower" %}↓ lower{% else %}<span class="muted">?</span>{% endif %}</td>
