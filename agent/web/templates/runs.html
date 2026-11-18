@@ -20,7 +20,7 @@
           ("PASS", "PASS", "Passing now, including runs a review changed to PASS")] %}<option value="{{ v }}" title="{{ hint }}" {% if v == result %}selected{% endif %}>{{ text }}</option>{% endfor %}
     </select>
   </label>
-  <label>Agent label
+  <label>Heuristic label
     <select name="label">
       <option value="">all</option>
       {% for l in labels %}<option {% if l == label %}selected{% endif %}>{{ l }}</option>{% endfor %}

@@ -4,9 +4,9 @@
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
 <h2>Progress toward auto-apply</h2>
-<p class="muted">Per service (Jenkins job) and agent category: how often reviewers agreed with the agent. Each qualifies for the agent to apply it on its own at {{ min_agreement|round|int }}% agreement over {{ min_reviews }} reviews of that service and category, independent of other services (PLAN.md 6.4). Labels shows which agent labels the reviews came from. Auto-apply isn't built yet.</p>
+<p class="muted">Per service (Jenkins job) and heuristic prediction: how often reviewers agreed with it. Each qualifies to be applied automatically at {{ min_agreement|round|int }}% agreement over {{ min_reviews }} reviews of that service and category, independent of other services (PLAN.md 6.4). Labels shows which heuristic labels the reviews came from. Auto-apply isn't built yet.</p>
 <table class="compact">
-  <thead><tr><th>Job</th><th>Agent category</th><th>Labels</th><th class="num">Reviewed</th><th class="num">Agreed</th><th class="num">Agreement</th><th>Status</th></tr></thead>
+  <thead><tr><th>Job</th><th>Heuristic prediction</th><th>Labels</th><th class="num">Reviewed</th><th class="num">Agreed</th><th class="num">Agreement</th><th>Status</th></tr></thead>
   {% for p in progress %}
   <tr><td>{{ p.job }}</td><td>{{ p.category }}</td><td class="small">{% for l, c in p.labels.items() %}{{ l }} {{ c }}{% if not loop.last %}, {% endif %}{% endfor %}</td><td class="num">{{ p.reviewed }} / {{ min_reviews }}</td><td class="num">{{ p.agreed }}</td>
     <td class="num">{{ "%.0f"|format(p.pct) }}%</td>
@@ -19,7 +19,7 @@
 
 <h2>Latest</h2>
 <table>
-  <thead><tr><th>When (UTC)</th><th>Job / run</th><th>Agent said</th><th>Reviewer said</th><th>By</th><th>Why</th></tr></thead>
+  <thead><tr><th>When (UTC)</th><th>Job / run</th><th>Heuristic predicted</th><th>Reviewer said</th><th>By</th><th>Why</th></tr></thead>
   {% for r in reviews %}
   <tr>
     <td class="nowrap">{{ r.reviewed_at|short_time }}</td>

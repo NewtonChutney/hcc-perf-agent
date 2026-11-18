@@ -27,7 +27,7 @@ def test_faster_run_is_improved_not_regression():
         d("results.requests.SUMMARY.num_requests", 706930, 614913, 682763),
     ))
     assert a.label == "IMPROVED"
-    assert a.predicted_category == "possible_baseline_false_positive"
+    assert a.predicted_category == "false_positive"
 
 
 def test_any_worse_metric_is_regression():
@@ -87,7 +87,7 @@ def test_worse_within_normal_noise_is_NOISE_not_REGRESSION():
     history = [35.5, 35.0, 36.1, 34.8, 35.9, 35.3, 36.3, 35.6, 34.9, 35.7]
     m = "results.requests.SUMMARY.median_response_time"
     a = assess(run(d(m, 36.157, 32.008, 36.023)), {m: noise_band(history)})
-    assert a.label == "NOISE" and a.predicted_category == "possible_baseline_false_positive"
+    assert a.label == "NOISE" and a.predicted_category == "false_positive"
     assert a.readings[0].beyond_noise is False
     # Well beyond the normal range stays a regression.
     assert assess(run(d(m, 45.0, 32.008, 36.023)), {m: noise_band(history)}).label == "REGRESSION"

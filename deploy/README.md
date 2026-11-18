@@ -61,9 +61,13 @@ A review by a user in `WRITEBACK_USERS` sets the run's `result` the way
 
 | Review category | Result | RP defect type it replaces |
 |---|---|---|
-| `possible_baseline_false_positive` | PASS | `no_defect` |
+| `false_positive` | PASS | `no_defect` |
 | `environment_failure` | ERROR | `system_issue` |
-| `true_failure`, `known_issue`, `requires_investigation` | FAIL | `product_bug`, `to_investigate` |
+| `automation_bug` | ERROR (RP set FAIL) | `automation_bug` |
+| `new_issue`, `known_issue`, `requires_investigation` | FAIL | `product_bug`, `to_investigate` |
+
+Reviews saved before the renames (`possible_baseline_false_positive`, `true_failure`) are
+read as `false_positive` and `new_issue`; the stored documents are unchanged.
 
 - **What it writes:** `result` plus a `comments` entry (author, date, reason) on the
   status-data document, and `result` on the matching `results-dashboard-data` document.

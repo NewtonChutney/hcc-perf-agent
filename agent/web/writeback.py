@@ -26,13 +26,16 @@ import requests
 
 from . import es
 
-# Review category -> result, mirroring RP_TO_ES_STATE in opl/status_data_updater.py.
+# Review category -> result, mirroring RP_TO_ES_STATE in opl/status_data_updater.py, except
+# automation_bug: RP set FAIL, but a broken test says nothing about the service, so ERROR.
+# Only PASS enters baselines.
 RESULT_FOR_CATEGORY = {
-    "possible_baseline_false_positive": "PASS",   # RP no_defect
-    "environment_failure": "ERROR",               # RP system_issue
-    "true_failure": "FAIL",                       # RP product_bug
-    "known_issue": "FAIL",                        # RP product_bug with a bug link
-    "requires_investigation": "FAIL",             # RP to_investigate
+    "false_positive": "PASS",           # RP no_defect
+    "new_issue": "FAIL",                # RP product_bug
+    "known_issue": "FAIL",              # RP product_bug with a bug link
+    "environment_failure": "ERROR",     # RP system_issue
+    "automation_bug": "ERROR",          # RP automation_bug (FAIL there)
+    "requires_investigation": "FAIL",   # RP to_investigate
 }
 DASHBOARD_INDEX = os.environ.get("DASHBOARD_INDEX", "results-dashboard-data")
 
@@ -40,14 +43,14 @@ DASHBOARD_INDEX = os.environ.get("DASHBOARD_INDEX", "results-dashboard-data")
 # (Jenkins job) and category. Auto-apply itself isn't built yet; the Reviews page shows progress.
 AUTO_APPLY_MIN_REVIEWS = int(os.environ.get("AUTO_APPLY_MIN_REVIEWS", "10"))
 AUTO_APPLY_MIN_AGREEMENT = float(os.environ.get("AUTO_APPLY_MIN_AGREEMENT", "95"))
-NEVER_AUTO = {"true_failure", "requires_investigation"}
+NEVER_AUTO = {"new_issue", "requires_investigation"}
 
 
 def auto_apply_progress(reviews: list[dict]) -> list[dict]:
-    """Per (job, agent category): reviews, agreement, and whether it meets the bar.
+    """Per (job, predicted category): reviews, agreement, and whether it meets the bar.
 
-    IMPROVED and NOISE both predict possible_baseline_false_positive and count together,
-    as do OUTLIER and ERROR for environment_failure; the label mix is reported so a record built mostly on one label is visible.
+    IMPROVED and NOISE both predict false_positive and count together; the label mix is
+    reported so a record built mostly on one label is visible.
     """
     groups: dict[tuple[str, str], dict] = {}
     for r in reviews:

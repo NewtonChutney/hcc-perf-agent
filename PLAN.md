@@ -336,11 +336,12 @@ flowchart TD
 - **Classification:** reuse `rp-triage`'s `classify.py` (`--status-data` mode) and
   `review.py`, which already work from ES alone. They read the per-service config from 5.7
   instead of the hard-coded table. Categories:
+  - `false_positive` (was `possible_baseline_false_positive`)
+  - `new_issue` (was `true_failure`)
   - `known_issue`
   - `environment_failure`
+  - `automation_bug`: the test or its data collection is broken; result ERROR
   - `requires_investigation`
-  - `true_failure`
-  - `possible_baseline_false_positive`
 
   `collect.py` is rewritten to start from ES status data and decisions instead of
   ReportPortal launches. `apply.py` and `sync.py` are dropped.
@@ -382,9 +383,10 @@ flowchart TD
   - `REGRESSION`: at least one worse move is beyond its normal range, or there's too little
     history to tell. The summary says whether images changed, or why it isn't an `OUTLIER`
     (for example, the previous run was beyond the band too: a sustained shift).
-  - `IMPROVED` and `NOISE` predict `possible_baseline_false_positive` and count together
+  - `IMPROVED` and `NOISE` predict `false_positive` and count together
     toward that category's auto-apply bar (6.4). The Reviews page shows the label mix.
-    `OUTLIER` and `ERROR` likewise share `environment_failure`.
+    `ERROR` (a check couldn't run) predicts `requires_investigation`: the rules can't tell a
+    test missing data (`automation_bug`) from a broken environment (`environment_failure`).
   - Known gap until step detection (5.5) exists: a lasting regression becomes the new median
     after enough runs and then looks like noise. Very noisy metrics get wide bands; those
     are candidates for `gate: false`.
@@ -423,9 +425,9 @@ services. The Reviews page in the web UI shows progress per service and category
 ## 7. Phase 2: applying corrections and interactive Q&A
 
 - **Allowlist.** The agent applies corrections on its own only for (service, category)
-  pairs that met the Phase 1 exit criteria, e.g. `possible_baseline_false_positive` for
+  pairs that met the Phase 1 exit criteria, e.g. `false_positive` for
   `InsightsKesselK6_runnerAPI` once that job has 10 such reviews at 95% or better.
-  `true_failure` and `requires_investigation` always go to a human.
+  `new_issue` and `requires_investigation` always go to a human.
 - **What gets written.** The verdict and `baseline_eligible` are written to ES with
   `result_override: {previous, by, reason, at, audit_id}`, so every change can be reversed.
   Writes go through code with fixed rules. The LLM has no write tools.
@@ -508,7 +510,7 @@ checking.
 | Place to override a verdict | **Web UI review (live)**: Agree/Disagree sets `result` on status data and `results-dashboard-data` for users in `WRITEBACK_USERS`. Jenkins override job (5.9) as the fallback when the UI is down; Slack commands in Phase 2 |
 | Record of who changed what and why | `comments` on the status-data document (author, date, text), and the review in `insights_perf_triage_reviews` with `writeback.result_before`/`result_after` |
 | List of untriaged failures | Web UI runs page: Review column and the "review pending" filter. A Kibana dashboard is optional |
-| Defect types (`no_defect`, `system_issue`, ...) | Review category, mapped the way RP's sync mapped defect types: `possible_baseline_false_positive` → PASS, `environment_failure` → ERROR, the rest → FAIL. `baseline_eligible` comes later (5.6) |
+| Defect types (`no_defect`, `system_issue`, ...) | Review category, mapped the way RP's sync mapped defect types: `false_positive` → PASS, `environment_failure` and `automation_bug` → ERROR (RP set FAIL for automation bugs), the rest → FAIL. `baseline_eligible` comes later (5.6) |
 | Sync to ES (`UtilResultsFromRPToES`) | Not needed: the review writes to ES directly |
 | Historical triage decisions | One-time export to ES (5.10) |
 

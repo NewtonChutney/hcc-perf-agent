@@ -13,7 +13,7 @@
 {% if review %}
 <p>Last review by <b>{{ review.reviewer|who }}</b> at {{ review.reviewed_at|short_time }} UTC:
   <span class="tag">{{ review.category }}</span>
-  {% if review.category == review.predicted_category %}(agreed with the agent){% else %}(agent said {{ review.predicted_category or "nothing" }}){% endif %}
+  {% if review.category == review.predicted_category %}(agreed with the heuristic prediction){% else %}(heuristic predicted {{ review.predicted_category or "nothing" }}){% endif %}
   {% if wb.status == "changed" %}· result {{ wb.result_before }} → {{ wb.result_after }}{% endif %}
   {% if review.explanation %}<br><q>{{ review.explanation }}</q>{% endif %}
   {% if review.bug_url %}<br><a href="{{ review.bug_url }}">{{ review.bug_url }}</a>{% endif %}
@@ -22,7 +22,7 @@
 
 {% if a.predicted_category %}
 <form method="post" action="/runs/{{ run.job_name }}/{{ run.build_number }}/review" class="review">
-  <p>Agent's category: <span class="tag">{{ a.predicted_category }}</span></p>
+  <p>Heuristic prediction: <span class="tag">{{ a.predicted_category }}</span> <span class="muted small">from rules on the decisions and run history, not an LLM</span></p>
   {% if writeback_enabled() and run.status %}
   <p class="small">
     {% if can_write %}

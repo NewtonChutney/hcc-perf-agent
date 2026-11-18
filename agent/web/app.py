@@ -75,7 +75,7 @@ def _filtered_runs(days: int, job: str, result: str, show_pr: bool, review: str,
     assessment, review), and how many matched in all.
 
     Labels need history queries, so cheap filters go first. When no filter depends on the
-    label (Agent label, Review = pending), the cap is applied before labelling: same rows,
+    label (Heuristic label, Review = pending), the cap is applied before labelling: same rows,
     far fewer queries.
     """
     runs = es.list_runs(days, job or None, result or None, limit=None)

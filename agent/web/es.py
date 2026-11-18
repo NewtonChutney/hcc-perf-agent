@@ -513,12 +513,25 @@ def job_names(days: int = 30) -> list[str]:
 
 # --- reviews -----------------------------------------------------------------
 
+# Review categories that were renamed; stored reviews (and rp-triage, which still writes the
+# old names) are read under the current name.
+CATEGORY_RENAMES = {"possible_baseline_false_positive": "false_positive", "true_failure": "new_issue"}
+
+
+def _review(doc: dict) -> dict:
+    for key in ("category", "predicted_category"):
+        if doc.get(key) in CATEGORY_RENAMES:
+            doc[key] = CATEGORY_RENAMES[doc[key]]
+    return doc
+
+
 def get_review(review_id: str) -> dict | None:
     r = requests.get(f"{ES_URL}/{REVIEWS_INDEX}/_doc/{quote(review_id, safe='')}", timeout=TIMEOUT)
     if r.status_code == 404:
         return None
     r.raise_for_status()
-    return r.json().get("_source")
+    doc = r.json().get("_source")
+    return _review(doc) if doc else None
 
 
 def get_reviews(review_ids: list[str]) -> dict[str, dict]:
@@ -530,7 +543,7 @@ def get_reviews(review_ids: list[str]) -> dict[str, dict]:
     if r.status_code == 404:  # index not created yet
         return {}
     r.raise_for_status()
-    return {d["_id"]: d["_source"] for d in r.json().get("docs", []) if d.get("found")}
+    return {d["_id"]: _review(d["_source"]) for d in r.json().get("docs", []) if d.get("found")}
 
 
 def save_review(review_id: str, doc: dict) -> None:
@@ -543,7 +556,7 @@ def list_reviews(limit: int = 500) -> list[dict]:
         "size": limit,
         "sort": [{"reviewed_at": {"order": "desc", "unmapped_type": "date"}}],
     })
-    return [h["_source"] for h in data["hits"]["hits"]]
+    return [_review(h["_source"]) for h in data["hits"]["hits"]]
 
 
 def ping() -> bool:

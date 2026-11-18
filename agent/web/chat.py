@@ -324,7 +324,7 @@ TOOLS = {
         "list_jobs", "Jenkins jobs that produced pass_or_fail decisions recently.",
         {"days": {"type": "integer", "default": 30}})),
     "list_runs": (tool_list_runs, _schema(
-        "list_runs", "Recent runs (newest first) with result, agent label and failing metrics. `result` "
+        "list_runs", "Recent runs (newest first) with result, heuristic label and failing metrics. `result` "
         "is the current result (after reviews); `pass_or_fail_result` is what the check said.",
         {"job": _JOB, "days": {"type": "integer", "default": 7},
          "result": {"type": "string", "enum": ["PASS", "FAIL", "ERROR", "FAIL-PASS"],

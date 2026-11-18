@@ -55,12 +55,14 @@ _DIRECTION_RULES: list[tuple[re.Pattern, str]] = [
     (re.compile(r"percentile|p\d\d|response_time|latency|duration|time|lag|cpu|memory|mem_|max", re.I), "lower"),
 ]
 
-# Categories shared with rp-triage review.py and the insights_perf_triage_reviews index.
+# Review categories, in the order the UI lists them. Stored in insights_perf_triage_reviews;
+# reviews saved under older names are renamed on read (es.CATEGORY_RENAMES).
 CATEGORIES = (
-    "true_failure",
-    "possible_baseline_false_positive",
-    "environment_failure",
+    "false_positive",
+    "new_issue",
     "known_issue",
+    "environment_failure",
+    "automation_bug",
     "requires_investigation",
 )
 
@@ -68,29 +70,37 @@ CATEGORIES = (
 # What each category means, for reviewers: (meaning, use it when, ReportPortal defect type).
 # The result a review sets is writeback.RESULT_FOR_CATEGORY.
 CATEGORY_HELP = {
-    "possible_baseline_false_positive": (
+    "false_positive": (
         "The service is fine; the check was wrong. Its band is stale or tighter than the test's "
         "normal run-to-run noise.",
         "Every failing metric got better, or the worse moves are within normal noise.",
         "no_defect"),
-    "environment_failure": (
-        "The run is invalid: something other than the code under test broke or skewed it, so it "
-        "says nothing about the service.",
-        "Cluster, node, database or network trouble; a rollout or restarts during the run; a "
-        "recurring one-off slow run; a check errored because the run is missing data.",
-        "system_issue"),
-    "true_failure": (
-        "A real regression, caused by the code or configuration under test.",
-        "You confirmed the slowdown (or other worse move) and its cause, e.g. an image change.",
+    "new_issue": (
+        "A real regression, caused by the code or configuration under test, and not tracked yet.",
+        "You confirmed the slowdown (or other worse move) and its cause, e.g. an image change. "
+        "File a bug; later runs can then be marked known_issue.",
         "product_bug"),
     "known_issue": (
         "A real problem that is already tracked.",
         "The failure matches an open bug; give its URL. Later runs failing the same metrics can be "
         "matched to it.",
         "product_bug, with a bug link"),
+    "environment_failure": (
+        "The run is invalid: something outside the test and the code under test broke or skewed "
+        "it, so it says nothing about the service.",
+        "Cluster, node, database or network trouble; a rollout or restarts during the run; a "
+        "recurring one-off slow run.",
+        "system_issue"),
+    "automation_bug": (
+        "The run is invalid: the test itself or its data collection is broken, so it says nothing "
+        "about the service.",
+        "A script or config error in the test; a metric the checks need wasn't collected (a "
+        "pass_or_fail ERROR), e.g. because a monitored pod was dropped from the test config.",
+        "automation_bug (ReportPortal set FAIL)"),
     "requires_investigation": (
         "Not known yet; someone needs to look.",
-        "Worse beyond normal noise with no explanation yet, or the direction is unclear.",
+        "Worse beyond normal noise with no explanation yet, the direction is unclear, or a check "
+        "errored and the cause isn't clear.",
         "to_investigate"),
 }
 
@@ -99,10 +109,12 @@ LABELS = ("REGRESSION", "OUTLIER", "NOISE", "IMPROVED", "UNCLEAR", "ERROR", "PAS
 LABEL_CATEGORY = {
     "REGRESSION": "requires_investigation",
     "OUTLIER": "environment_failure",
-    "NOISE": "possible_baseline_false_positive",
-    "IMPROVED": "possible_baseline_false_positive",
+    "NOISE": "false_positive",
+    "IMPROVED": "false_positive",
     "UNCLEAR": "requires_investigation",
-    "ERROR": "environment_failure",
+    # A check errored: the test missed data (automation_bug) or the environment broke
+    # (environment_failure). The rules can't tell which, so a person decides.
+    "ERROR": "requires_investigation",
     "PASS": None,
 }
 
@@ -332,7 +344,9 @@ def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
                 r.seen, r.seen_last = rec.seen[r.decision.metric]
     failed = [r for r in readings if r.decision.result == "FAIL"]
     if run.result == "ERROR":
-        return Assessment("ERROR", "pass_or_fail errored; check the Jenkins console.", readings)
+        return Assessment("ERROR", "pass_or_fail errored: a check couldn't run, usually because a metric is "
+                          "missing from this run. The test missing data is an automation_bug; the environment "
+                          "breaking is an environment_failure. Check the Jenkins console.", readings)
     if not failed:
         return Assessment("PASS", "All gated metrics are inside their bands.", readings)
     worse = [r for r in failed if r.verdict == "worse"]
