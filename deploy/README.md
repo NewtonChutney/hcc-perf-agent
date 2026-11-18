@@ -54,6 +54,22 @@ Deployment.
 To run a branch build, run `oc tag --scheduled ghcr.io/newtonchutney/hcc-perf-agent:<branch> hcc-perf-agent:latest`.
 The next `oc apply -k deploy/base` resets it to `main`.
 
+## Chat (optional)
+
+The Chat page and the panel on each run page answer questions with an EnMaaS model
+(`LLM_MODEL`, default GLM 5.3). The model reads CPT data only through read-only tools in
+`agent/web/chat.py`. Chat stays disabled until the key exists. Read the key from a file so
+it stays out of shell history:
+
+```sh
+oc --context $C -n hceperf--runtime-int create secret generic hcc-perf-agent-llm \
+  --from-file=api-key=/path/to/enmaas-key
+oc --context $C -n hceperf--runtime-int rollout restart deploy/hcc-perf-agent
+```
+
+Each question is logged with the user, the tools called, and the duration (`oc logs
+deploy/hcc-perf-agent -c app`). Answers aren't stored.
+
 ## Perf-cluster alerts (optional)
 
 The Alerts page stays disabled until it has a token. On `rhperfcluster`, create a
@@ -72,6 +88,7 @@ oc --context $C -n hceperf--runtime-int create secret generic hcc-perf-agent-per
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest
 .venv/bin/python -m pytest -q tests
 DEV_USER=$USER .venv/bin/uvicorn agent.web.app:app --reload   # http://127.0.0.1:8000
+# chat: LLM_API_KEY=... (or LLM_API_KEY_FILE=...) in the same command
 ```
 
 Set `REVIEWS_INDEX` to a scratch index when you try out review writes locally.

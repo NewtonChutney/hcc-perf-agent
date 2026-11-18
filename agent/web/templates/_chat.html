@@ -1,0 +1,29 @@
+{# Chat panel. Include with `run` set to scope questions to that build. #}
+<section class="chat" id="chat"
+  data-job="{{ run.job_name if run else '' }}" data-build="{{ run.build_number if run else '' }}">
+  <h2>Ask about {{ "this run" if run else "CPT runs and metrics" }}</h2>
+  {% if chat_enabled() %}
+  <div class="chat-log" aria-live="polite"></div>
+  <div class="chat-suggestions">
+    {% if run %}
+    <button type="button">Why did this run fail?</button>
+    <button type="button">Walk me through all metrics this run recorded, a group at a time</button>
+    <button type="button">Compare this run with the previous run of the same test</button>
+    <button type="button">How noisy is the 95th percentile for this job?</button>
+    {% else %}
+    <button type="button">Which jobs failed in the last 3 days, and were they regressions or improvements?</button>
+    <button type="button">List the gated metrics for InsightsKesselK6_runnerAPI</button>
+    <button type="button">Which metrics fail most often for the notifications jobs?</button>
+    {% endif %}
+  </div>
+  <form class="chat-form">
+    <textarea name="q" rows="2" placeholder="Ask a question (Enter to send, Shift+Enter for a new line)"></textarea>
+    <button>Send</button>
+    <button type="button" class="chat-reset">New chat</button>
+  </form>
+  <p class="muted small">Answers come from an LLM (EnMaaS) that reads CPT data through read-only tools; the tools it used are listed under each answer. Check numbers against the tables before acting on them.</p>
+  <script src="/static/chat.js" defer></script>
+  {% else %}
+  <p class="muted">Chat is not configured: the deployment needs an EnMaaS API key (see <code>deploy/README.md</code>).</p>
+  {% endif %}
+</section>

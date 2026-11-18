@@ -121,8 +121,14 @@ flowchart TD
 - **Libraries:** `slack_bolt` (Socket Mode), `requests` (ES, Jenkins, GitHub,
   Alertmanager), `kubernetes` (perf cluster), `boto3` (AWS), and an OpenAI-compatible
   client for EnMaaS.
-- **To verify:** that EnMaaS exposes an OpenAI-compatible API with tool calling for GLM and
-  DeepSeek.
+- **EnMaaS:** OpenAI-compatible chat completions at `https://api.enmaas.devshift.net/v1`
+  (models `rits/zai-org/glm-5-3`, `rits/deepseek-ai/DeepSeek-V4.1-Flash-1017`). Delta's
+  no-cost agent profiles already use it with tool calling. The web UI's chat
+  (`agent/web/chat.py`) is the first Q&A loop: read-only ES tools, a cap on tool rounds, and
+  a trace of the tools it called shown with each answer.
+- **Comparable runs:** a job can rotate through several tests, so history and comparisons
+  group runs by test name plus scenario, transport, duration and client count. Status data
+  joins to decisions on `results.jenkins.build_url`.
 
 ## 4. Main flows
 

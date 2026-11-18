@@ -8,6 +8,7 @@ headers can't be set by anyone but the proxy. Writes go only to the reviews inde
 from __future__ import annotations
 
 import collections
+import logging
 import os
 import pathlib
 from urllib.parse import urlparse
@@ -18,10 +19,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import alerts, es
+from . import alerts, chat, es, fmt
 from .charts import sparkline
 from .rules import CATEGORIES, assess
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 HERE = pathlib.Path(__file__).parent
 app = FastAPI(title="HCC Perf Agent", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
@@ -29,18 +31,10 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.globals.update(
     kibana_url=os.environ.get("KIBANA_URL", ""),
     alerts_enabled=alerts.enabled,
+    chat_enabled=chat.enabled,
 )
-
-
-def _fmt(v):
-    if v is None:
-        return "-"
-    if isinstance(v, float):
-        return f"{v:.4g}" if abs(v) < 1e6 else f"{v:,.0f}"
-    return str(v)
-
-
-templates.env.filters["num"] = _fmt
+templates.env.filters["num"] = fmt.num
+templates.env.filters["pct"] = fmt.pct
 templates.env.filters["short_time"] = lambda s: (s or "")[:16].replace("T", " ")
 
 
@@ -94,10 +88,10 @@ def run_page(request: Request, job: str, number: str, saved: bool = False):
         raise HTTPException(404, f"No decisions found for {job} #{number}")
     assessment = assess(run)
     metrics = [r.decision.metric for r in assessment.readings]
-    history = es.metric_history(job, metrics, before=run.uploaded[:19] + "||+1m")
+    test, history = es.comparable_history(run, metrics)
     charts = {m: sparkline(points, highlight_url=run.build_url) for m, points in history.items()}
     return templates.TemplateResponse(request, "run.html", dict(
-        run=run, a=assessment, charts=charts, review=es.get_review(run.review_id),
+        run=run, a=assessment, charts=charts, test=test, review=es.get_review(run.review_id),
         categories=CATEGORIES, saved=saved, user=current_user(request)))
 
 
@@ -153,6 +147,31 @@ def reviews_page(request: Request):
             by_job[r.get("job_name", "?")][1] += r.get("category") == r.get("predicted_category")
     return templates.TemplateResponse(request, "reviews.html", dict(
         reviews=reviews, by_job=dict(sorted(by_job.items())), error=error, user=current_user(request)))
+
+
+@app.get("/chat", response_class=HTMLResponse)
+def chat_page(request: Request):
+    return templates.TemplateResponse(request, "chat.html", dict(user=current_user(request)))
+
+
+@app.post("/api/chat")
+async def chat_api(request: Request):
+    check_same_origin(request)
+    user = current_user(request)
+    if not user:
+        raise HTTPException(401, "not signed in")
+    body = await request.json()
+    history = body.get("messages")
+    if not isinstance(history, list) or not history or history[-1].get("role") != "user":
+        raise HTTPException(400, "messages must end with a user message")
+    job, build = body.get("job") or None, body.get("build") or None
+    try:
+        # The tool loop does blocking HTTP calls; keep it off the event loop.
+        from starlette.concurrency import run_in_threadpool
+        result = await run_in_threadpool(chat.answer, history, user, job, build)
+    except chat.ChatUnavailable as exc:
+        return JSONResponse({"error": str(exc)}, status_code=503)
+    return result
 
 
 @app.get("/alerts", response_class=HTMLResponse)

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from markupsafe import Markup, escape
 
+from .fmt import num
+
 W, H, PAD = 320, 70, 4
 
 
@@ -42,8 +44,8 @@ def sparkline(points: list[dict], highlight_url: str | None = None) -> Markup:
         cls = "fail" if p.get("result") == "FAIL" else "pass"
         if highlight_url and p.get("build_url") == highlight_url:
             cls += " current"
-        title = escape(f"{(p.get('uploaded') or '')[:16]}  value {p['value']:.4g}  "
-                       f"band [{p.get('lower_boundary')}, {p.get('upper_boundary')}]  {p.get('result')}")
+        title = escape(f"{(p.get('uploaded') or '')[:16]}  value {num(p['value'])}  "
+                       f"band {num(p.get('lower_boundary'))} – {num(p.get('upper_boundary'))}  {p.get('result')}")
         parts.append(f'<circle class="{cls}" cx="{x(i):.1f}" cy="{y(p["value"]):.1f}" r="2.5"><title>{title}</title></circle>')
     parts.append("</svg>")
     return Markup("".join(parts))

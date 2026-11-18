@@ -1,0 +1,10 @@
+{# Arrow = which way the value moved out of its band; color = whether that is good. #}
+{% macro metric_chip(m, name=None) -%}
+<span class="metric {{ m.verdict }}" title="{{ m.decision.metric }}: {{ m.decision.value|num }} vs band {{ m.decision.lower|num }} – {{ m.decision.upper|num }}; {{ ('higher' if m.better == 'higher' else 'lower') ~ ' is better' if m.better else 'direction unknown' }}">
+  <span class="arrow">{{ m.arrow }}</span>{{ name or m.short_name }} {{ m.deviation_pct|pct }}</span>
+{%- endmacro %}
+
+{% set LABEL_ICONS = {"PASS": "✓", "FAIL": "✗", "ERROR": "!", "REGRESSION": "⚠", "IMPROVED": "★", "UNCLEAR": "?"} %}
+{% macro tag(label) -%}
+<span class="tag {{ label|lower }}">{{ LABEL_ICONS.get(label, "") }} {{ label }}</span>
+{%- endmacro %}

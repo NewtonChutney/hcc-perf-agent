@@ -32,6 +32,15 @@ spec:
               value: ""
             - name: ALERTS_KNOWN_FALSE
               value: RbacIsDown,NotificationsGWDownPerf
+            # Chat stays off until the hcc-perf-agent-llm Secret exists (deploy/README.md).
+            - name: LLM_BASE_URL
+              value: https://api.enmaas.devshift.net/v1
+            - name: LLM_MODEL
+              value: rits/zai-org/glm-5-3
+          volumeMounts:
+            - name: llm
+              mountPath: /var/run/secrets/llm
+              readOnly: true
           resources:
             requests: {cpu: 50m, memory: 128Mi}
             limits: {cpu: 500m, memory: 512Mi}
@@ -47,6 +56,8 @@ spec:
             - --email-domain=*
             - --pass-user-headers=true
             - --skip-auth-regex=^/(healthz|readyz)$
+            # A chat turn can take several LLM and ES round trips.
+            - --upstream-timeout=180s
           ports:
             - name: web
               containerPort: 8080
@@ -68,3 +79,7 @@ spec:
         - name: cookie-secret
           secret:
             secretName: hcc-perf-agent-oauth-cookie
+        - name: llm
+          secret:
+            secretName: hcc-perf-agent-llm
+            optional: true

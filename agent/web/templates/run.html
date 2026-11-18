@@ -1,9 +1,10 @@
 {% extends "base.html" %}
+{% from "_macros.html" import metric_chip, tag %}
 {% block title %}{{ run.job_name }} #{{ run.build_number }} · HCC Perf Agent{% endblock %}
 {% block content %}
 <h1>{{ run.job_name }} #{{ run.build_number }}
-  <span class="tag {{ run.result|lower }}">{{ run.result }}</span>
-  <span class="tag {{ a.label|lower }}">{{ a.label }}</span>
+  {{ tag(run.result) }}
+  {{ tag(a.label) }}
   {% if run.status and run.status.pr %}<span class="tag pr">PR</span>{% endif %}
 </h1>
 <p>{{ a.summary }}</p>
@@ -40,19 +41,18 @@
 </section>
 
 <h2>Metrics</h2>
-<p class="muted">Band = limits <code>pass_or_fail</code> used for this run. "Better" is guessed from the metric name until per-service config declares it (PLAN.md 5.7). Chart: last 40 runs of this job; shaded area = band each run was checked against; red = FAIL; ringed = this run.</p>
+<p class="muted">Band = limits <code>pass_or_fail</code> used for this run. Outside band: arrow = which way the value moved, <span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>, % = distance past the band edge. "Better is" is guessed from the metric name until per-service config declares it (PLAN.md 5.7). Chart: last 40 runs of the same test{% if test %} ({% for k, v in test.items() %}{{ k.split('.')[-1] }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}){% else %} (no status data found, so this is job-wide and may mix tests){% endif %}; shaded area = band each run was checked against; red dot = FAIL; ringed = this run.</p>
 <table>
-  <thead><tr><th>Metric</th><th>Result</th><th>Value</th><th>Band</th><th>Outside by</th><th>Better is</th><th>Reading</th><th>History</th></tr></thead>
+  <thead><tr><th>Metric</th><th>Result</th><th class="num">Value</th><th class="num">Band</th><th>Outside band</th><th>Better is</th><th>History</th></tr></thead>
   <tbody>
   {% for m in a.readings %}
     <tr>
       <td><code>{{ m.decision.metric }}</code><br><span class="muted">{{ m.decision.method }}</span></td>
-      <td><span class="tag {{ m.decision.result|lower }}">{{ m.decision.result }}</span></td>
+      <td>{{ tag(m.decision.result) }}</td>
       <td class="num">{{ m.decision.value|num }}</td>
       <td class="num nowrap">{{ m.decision.lower|num }} – {{ m.decision.upper|num }}</td>
-      <td class="num">{% if m.deviation_pct is not none %}{{ "%+.1f"|format(m.deviation_pct) }}%{% endif %}</td>
-      <td>{{ m.better or "?" }}</td>
-      <td>{% if m.decision.result == "FAIL" %}<span class="metric {{ m.verdict }}">{{ m.verdict }}</span>{% endif %}</td>
+      <td class="nowrap">{% if m.decision.result == "FAIL" %}{{ metric_chip(m, m.verdict) }}{% endif %}</td>
+      <td class="nowrap">{% if m.better == "higher" %}↑ higher{% elif m.better == "lower" %}↓ lower{% else %}<span class="muted">?</span>{% endif %}</td>
       <td>{{ charts.get(m.decision.metric, "") }}</td>
     </tr>
   {% endfor %}
@@ -90,4 +90,6 @@
 {% else %}
 <p class="muted">Nothing to review: the run passed.</p>
 {% endif %}
+
+{% include "_chat.html" %}
 {% endblock %}

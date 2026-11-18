@@ -5,6 +5,9 @@ metadata:
   name: hcc-perf-agent
   labels:
     shard: internal
+  annotations:
+    # Chat turns can exceed the 30 s router default.
+    haproxy.router.openshift.io/timeout: 180s
 spec:
   host: hcc-perf-agent.apps.int.prod-scale-spoke1-dc-rdu3.itup.redhat.com
   to:

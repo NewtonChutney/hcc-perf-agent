@@ -46,6 +46,15 @@ class MetricReading:
     verdict: str            # 'worse', 'better', 'unknown', or 'pass'
     deviation_pct: float | None  # distance outside the band, relative to the band edge
 
+    @property
+    def arrow(self) -> str:
+        """Which way the value moved out of the band: up or down. Color shows good or bad."""
+        return {"above": "▲", "below": "▼"}.get(self.side or "", "")
+
+    @property
+    def short_name(self) -> str:
+        return self.decision.metric.split(".")[-1]
+
 
 def read_decision(d: Decision) -> MetricReading:
     better = better_direction(d.metric)
