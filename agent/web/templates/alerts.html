@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Perf cluster alerts</h1>
+{% if not enabled %}
+<p class="muted">Not configured. Set <code>ALERTMANAGER_URL</code> and mount a perf-cluster ServiceAccount token (with <code>monitoring-alertmanager-view</code>) at <code>/var/run/secrets/perf-cluster/token</code>. See <code>deploy/README.md</code>.</p>
+{% elif error %}
+<p class="error">{{ error }}</p>
+{% else %}
+<p>{{ data.total }} active, unsilenced alert(s) from <code>{{ am_url }}</code>.</p>
+<table>
+  <thead><tr><th>Severity</th><th>Alert</th><th>Namespace</th><th>Since (UTC)</th><th>Summary</th></tr></thead>
+  {% for (severity, name), items in data.groups %}
+    {% for a in items %}
+    <tr>
+      <td><span class="tag sev-{{ severity }}">{{ severity }}</span></td>
+      <td>{{ name }}{% if name in data.known_false %} <span class="tag known-false" title="Listed in ALERTS_KNOWN_FALSE">known false</span>{% endif %}</td>
+      <td>{{ a.namespace }}</td>
+      <td class="nowrap">{{ a.starts_at|short_time }}</td>
+      <td>{{ a.summary }}</td>
+    </tr>
+    {% endfor %}
+  {% endfor %}
+</table>
+{% endif %}
+{% endblock %}

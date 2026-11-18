@@ -1,0 +1,48 @@
+# Build the web UI image and publish it to ghcr.io/<owner>/hcc-perf-agent.
+# rdu3 doesn't allow in-cluster builds, so the ImageStream in deploy/base imports
+# the `main` tag from here and the Deployment rolls out when it changes.
+name: image
+
+on:
+  push:
+    branches: ["**"]
+    paths: ["agent/**", "requirements.txt", "Containerfile", "tests/**", ".github/workflows/image.yaml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Test
+        run: |
+          pip install -r requirements.txt pytest
+          python -m pytest -q tests
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/hcc-perf-agent
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Containerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

@@ -1,0 +1,39 @@
+# Slack app manifest for the HCC Perf Agent.
+# Create the app from this at https://api.slack.com/apps -> Create New App -> From a manifest.
+# Scope rationale: ARCHITECTURE.md section 10.1. Tokens never go in this repo.
+_metadata:
+  major_version: 1
+  minor_version: 1
+display_information:
+  name: HCC Perf Agent
+  description: Triages HCC CPT results and perf-cluster alerts, and answers questions in threads.
+  long_description: >-
+    Replies in the threads of Jenkins CPT result messages with a rule-based classification
+    of the run (category, confidence, failed metrics, what changed, environment findings) and
+    tags the owners of the affected component. Engineers can confirm or reject the
+    classification with buttons and ask follow-up questions by mentioning the bot. Also
+    summarizes relevant perf-cluster alerts. Uses Socket Mode only; no public endpoint.
+features:
+  bot_user:
+    display_name: HCC Perf Agent
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write         # post and update thread replies
+      - channels:history   # find the Jenkins message to reply under; thread context for Q&A
+      - channels:read      # resolve channel names to IDs
+      - app_mentions:read  # questions and commands in threads
+      - users:read         # identify who clicked or asked (correction allowlist, audit)
+      # Add only if a target channel is private:
+      # - groups:history
+      # - groups:read
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+  interactivity:
+    is_enabled: true       # Agree / Disagree buttons
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

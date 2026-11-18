@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>CPT runs</h1>
+<form class="filters" method="get">
+  <label>Last <input type="number" name="days" value="{{ days }}" min="1" max="60"> days</label>
+  <label>Job
+    <select name="job">
+      <option value="">all</option>
+      {% for j in jobs %}<option {% if j == job %}selected{% endif %}>{{ j }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Result
+    <select name="result">
+      {% for r in ["FAIL", "ERROR", "PASS", ""] %}<option value="{{ r }}" {% if r == result %}selected{% endif %}>{{ r or "all" }}</option>{% endfor %}
+    </select>
+  </label>
+  <label><input type="checkbox" name="show_pr" value="true" {% if show_pr %}checked{% endif %}> include PR runs</label>
+  <button>Apply</button>
+</form>
+
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<p class="counts">
+  {{ rows|length }} run(s):
+  {% for label, n in counts.most_common() %}<span class="tag {{ label|lower }}">{{ label }} {{ n }}</span> {% endfor %}
+</p>
+
+<table>
+  <thead><tr><th>Finished (UTC)</th><th>Job</th><th>Build</th><th>Test</th><th>Result</th><th>Agent label</th><th>Failing metrics</th></tr></thead>
+  <tbody>
+  {% for r, a in rows %}
+    <tr>
+      <td class="nowrap">{{ r.uploaded|short_time }}</td>
+      <td>{{ r.job_name }}</td>
+      <td><a href="/runs/{{ r.job_name }}/{{ r.build_number }}">#{{ r.build_number }}</a>
+        {% if r.status and r.status.pr %}<span class="tag pr">PR</span>{% endif %}</td>
+      <td>{{ r.status.name if r.status else "" }}</td>
+      <td><span class="tag {{ r.result|lower }}">{{ r.result }}</span></td>
+      <td><span class="tag {{ a.label|lower }}">{{ a.label }}</span></td>
+      <td class="metrics">
+        {% for m in a.readings if m.decision.result == "FAIL" %}
+          <span class="metric {{ m.verdict }}" title="{{ m.decision.metric }}">{{ m.decision.metric.split(".")[-1] }}
+            {% if m.deviation_pct is not none %}{{ "%+.1f"|format(m.deviation_pct) }}%{% endif %}</span>
+        {% endfor %}
+      </td>
+    </tr>
+  {% else %}
+    <tr><td colspan="7" class="muted">No runs match.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

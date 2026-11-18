@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hcc-perf-agent
+  annotations:
+    # Roll out automatically when a new build pushes hcc-perf-agent:latest.
+    image.openshift.io/triggers: >-
+      [{"from":{"kind":"ImageStreamTag","name":"hcc-perf-agent:latest"},"fieldPath":"spec.template.spec.containers[?(@.name==\"app\")].image"}]
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: hcc-perf-agent
+  template:
+    metadata:
+      labels:
+        app: hcc-perf-agent
+    spec:
+      serviceAccountName: hcc-perf-agent
+      containers:
+        - name: app
+          image: hcc-perf-agent:latest
+          # Localhost only: oauth-proxy is the sole entry point and sets the identity headers.
+          command: [uvicorn, agent.web.app:app, --host, 127.0.0.1, --port, "8000"]
+          env:
+            - name: ES_URL
+              value: http://elasticsearch.intlab.perf-infra.lab.eng.rdu2.redhat.com
+            # Perf-cluster alerts stay off until a token Secret is mounted (deploy/README.md).
+            - name: ALERTMANAGER_URL
+              value: ""
+            - name: ALERTS_KNOWN_FALSE
+              value: RbacIsDown,NotificationsGWDownPerf
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+        - name: oauth-proxy
+          image: image-registry.openshift-image-registry.svc:5000/openshift/oauth-proxy:v4.4
+          args:
+            - --provider=openshift
+            - --openshift-service-account=hcc-perf-agent
+            - --http-address=:8080
+            - --https-address=
+            - --upstream=http://127.0.0.1:8000
+            - --cookie-secret-file=/etc/oauth-proxy/cookie-secret
+            - --email-domain=*
+            - --pass-user-headers=true
+            - --skip-auth-regex=^/(healthz|readyz)$
+          ports:
+            - name: web
+              containerPort: 8080
+          volumeMounts:
+            - name: cookie-secret
+              mountPath: /etc/oauth-proxy
+              readOnly: true
+          readinessProbe:
+            httpGet: {path: /healthz, port: web}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /healthz, port: web}
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: {cpu: 20m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+      volumes:
+        - name: cookie-secret
+          secret:
+            secretName: hcc-perf-agent-oauth-cookie

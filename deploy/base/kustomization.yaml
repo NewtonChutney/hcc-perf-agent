@@ -1,0 +1,16 @@
+# HCC Perf Agent web UI on rdu3 (namespace hceperf--runtime-int, next to the Jenkins agents).
+# Apply: oc apply -k deploy/base   (see deploy/README.md for the one-time secret and build)
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: hceperf--runtime-int
+labels:
+  - pairs:
+      app.kubernetes.io/name: hcc-perf-agent
+      app.kubernetes.io/component: web
+    includeSelectors: false
+resources:
+  - serviceaccount.yaml
+  - imagestream.yaml
+  - deployment.yaml
+  - service.yaml
+  - route.yaml

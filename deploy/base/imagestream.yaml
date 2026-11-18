@@ -1,0 +1,20 @@
+# rdu3 rejects Docker and Source builds, so the image is built by GitHub Actions
+# (.github/workflows/image.yaml) and imported from GHCR. The scheduled import
+# re-checks the tag periodically; a new digest triggers a Deployment rollout.
+# Import now: oc import-image hcc-perf-agent:latest
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: hcc-perf-agent
+spec:
+  lookupPolicy:
+    local: true
+  tags:
+    - name: latest
+      from:
+        kind: DockerImage
+        name: ghcr.io/newtonchutney/hcc-perf-agent:main
+      importPolicy:
+        scheduled: true
+      referencePolicy:
+        type: Local

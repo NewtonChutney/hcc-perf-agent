@@ -1,0 +1,17 @@
+# Internal shard, like the Jenkins route in this namespace: reachable on the Red Hat network only.
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: hcc-perf-agent
+  labels:
+    shard: internal
+spec:
+  host: hcc-perf-agent.apps.int.prod-scale-spoke1-dc-rdu3.itup.redhat.com
+  to:
+    kind: Service
+    name: hcc-perf-agent
+  port:
+    targetPort: web
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect

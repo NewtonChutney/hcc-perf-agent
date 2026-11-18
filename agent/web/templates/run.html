@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ run.job_name }} #{{ run.build_number }} · HCC Perf Agent{% endblock %}
+{% block content %}
+<h1>{{ run.job_name }} #{{ run.build_number }}
+  <span class="tag {{ run.result|lower }}">{{ run.result }}</span>
+  <span class="tag {{ a.label|lower }}">{{ a.label }}</span>
+  {% if run.status and run.status.pr %}<span class="tag pr">PR</span>{% endif %}
+</h1>
+<p>{{ a.summary }}</p>
+<p>
+  <a href="{{ run.build_url }}">Jenkins build</a> ·
+  <a href="{{ run.build_url }}console">console</a>
+  {% if run.status %} · status data <code>{{ run.status.index }}</code> / <code>{{ run.status.id }}</code>{% endif %}
+</p>
+
+<section class="grid">
+  <div>
+    <h2>Run</h2>
+    {% if run.status %}
+    <dl>
+      <dt>Test</dt><dd>{{ run.status.name }}</dd>
+      <dt>Started</dt><dd>{{ run.status.started|short_time }}</dd>
+      <dt>Ended</dt><dd>{{ run.status.ended|short_time }}</dd>
+      <dt>Golden</dt><dd>{{ run.status.golden }}</dd>
+      {% if run.status.test %}<dt>Parameters</dt><dd><code>{{ run.status.test }}</code></dd>{% endif %}
+      {% if run.status.comments %}<dt>Comments</dt><dd><code>{{ run.status.comments }}</code></dd>{% endif %}
+    </dl>
+    {% else %}
+    <p class="muted">No status-data document found within 2 minutes before the decisions.</p>
+    {% endif %}
+  </div>
+  <div>
+    <h2>Images</h2>
+    {% if run.status and run.status.images %}
+    <table class="compact">
+      {% for pod, image in run.status.images.items() %}<tr><td>{{ pod }}</td><td><code>{{ image.split("/")[-1] }}</code></td></tr>{% endfor %}
+    </table>
+    {% else %}<p class="muted">Not recorded.</p>{% endif %}
+  </div>
+</section>
+
+<h2>Metrics</h2>
+<p class="muted">Band = limits <code>pass_or_fail</code> used for this run. "Better" is guessed from the metric name until per-service config declares it (PLAN.md 5.7). Chart: last 40 runs of this job; shaded area = band each run was checked against; red = FAIL; ringed = this run.</p>
+<table>
+  <thead><tr><th>Metric</th><th>Result</th><th>Value</th><th>Band</th><th>Outside by</th><th>Better is</th><th>Reading</th><th>History</th></tr></thead>
+  <tbody>
+  {% for m in a.readings %}
+    <tr>
+      <td><code>{{ m.decision.metric }}</code><br><span class="muted">{{ m.decision.method }}</span></td>
+      <td><span class="tag {{ m.decision.result|lower }}">{{ m.decision.result }}</span></td>
+      <td class="num">{{ m.decision.value|num }}</td>
+      <td class="num nowrap">{{ m.decision.lower|num }} – {{ m.decision.upper|num }}</td>
+      <td class="num">{% if m.deviation_pct is not none %}{{ "%+.1f"|format(m.deviation_pct) }}%{% endif %}</td>
+      <td>{{ m.better or "?" }}</td>
+      <td>{% if m.decision.result == "FAIL" %}<span class="metric {{ m.verdict }}">{{ m.verdict }}</span>{% endif %}</td>
+      <td>{{ charts.get(m.decision.metric, "") }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Review</h2>
+{% if saved %}<p class="ok">Review saved.</p>{% endif %}
+{% if review %}
+<p>Last review by <b>{{ review.reviewer }}</b> at {{ review.reviewed_at|short_time }} UTC:
+  <span class="tag">{{ review.category }}</span>
+  {% if review.category == review.predicted_category %}(agreed with the agent){% else %}(agent said {{ review.predicted_category or "nothing" }}){% endif %}
+  {% if review.explanation %}<br><q>{{ review.explanation }}</q>{% endif %}
+  {% if review.bug_url %}<br><a href="{{ review.bug_url }}">{{ review.bug_url }}</a>{% endif %}
+</p>
+{% endif %}
+
+{% if a.predicted_category %}
+<form method="post" action="/runs/{{ run.job_name }}/{{ run.build_number }}/review" class="review">
+  <p>Agent's category: <span class="tag">{{ a.predicted_category }}</span></p>
+  <button name="verdict" value="agree" class="agree">Agree</button>
+  <details>
+    <summary>Disagree…</summary>
+    <label>Correct category
+      <select name="category">
+        <option value="">choose</option>
+        {% for c in categories %}<option>{{ c }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Bug URL (required for known_issue) <input type="url" name="bug_url" placeholder="https://redhat.atlassian.net/browse/..."></label>
+    <label>Why <textarea name="explanation" rows="3"></textarea></label>
+    <button name="verdict" value="disagree" class="disagree">Save correction</button>
+  </details>
+</form>
+{% else %}
+<p class="muted">Nothing to review: the run passed.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Reviews</h1>
+{% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+<h2>Agreement by job</h2>
+<p class="muted">Share of reviews where the reviewer's category matched the agent's. PLAN.md 6.3 sets the bar for auto-apply (placeholder: 95% over 50 reviews).</p>
+<table class="compact">
+  <thead><tr><th>Job</th><th>Reviewed</th><th>Agreed</th><th>Agreement</th></tr></thead>
+  {% for job, (n, agreed) in by_job.items() %}
+  <tr><td>{{ job }}</td><td class="num">{{ n }}</td><td class="num">{{ agreed }}</td><td class="num">{{ "%.0f"|format(100 * agreed / n) }}%</td></tr>
+  {% else %}<tr><td colspan="4" class="muted">No reviews yet.</td></tr>{% endfor %}
+</table>
+
+<h2>Latest</h2>
+<table>
+  <thead><tr><th>When (UTC)</th><th>Job / run</th><th>Agent said</th><th>Reviewer said</th><th>By</th><th>Why</th></tr></thead>
+  {% for r in reviews %}
+  <tr>
+    <td class="nowrap">{{ r.reviewed_at|short_time }}</td>
+    <td>{% if r.build_url %}<a href="/runs/{{ r.job_name }}/{{ r.build_url.rstrip('/').split('/')[-1] }}">{{ r.job_name }} #{{ r.build_url.rstrip('/').split('/')[-1] }}</a>{% else %}{{ r.job_name }} {{ r.run_id }}{% endif %}</td>
+    <td>{{ r.predicted_category or "-" }}</td>
+    <td><span class="tag {% if r.category == r.predicted_category %}pass{% else %}fail{% endif %}">{{ r.category }}</span></td>
+    <td>{{ r.reviewer }}</td>
+    <td>{{ r.explanation or "" }}{% if r.bug_url %} <a href="{{ r.bug_url }}">bug</a>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

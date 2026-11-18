@@ -1,0 +1,8 @@
+.git
+.delta
+.pytest_cache
+**/__pycache__
+docs
+tools
+tests
+deploy

@@ -1,6 +1,6 @@
 # Perf CPT Agent for HCC Services: Plan
 
-Status: draft for review
+Status: draft for review. How the pieces fit together: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 1. Problem
 
@@ -358,13 +358,23 @@ flowchart TD
   (e.g. "caused by a rollout"), the summary says it's unknown. A post-check rejects
   summaries containing numbers that aren't in the evidence.
 
-### 6.2 Slack
+### 6.2 Web UI (now) and Slack (once approved)
 
-- **Threading:** change `helperSendSlackMsg` to keep the `slackSend` response and store
-  `slack.channel` and `slack.ts` in status data. The agent replies with
-  `chat.postMessage(thread_ts=...)`.
-- **Token:** reuse `coreos-slack-notification-token` for post-only replies if it's a bot
-  token (`xoxb-`). Check the token type and scopes on the app's api.slack.com page.
+- **Web UI first.** The Jenkins Slack token can't be reused: it's the legacy "Jenkins CI"
+  integration token (`botUser: false`), which can only post, and it lives on the `dno`
+  controller. So the first surface is a web UI on rdu3, behind cluster SSO. It lists runs
+  with the agent's label, shows each failing metric against its band and history, and has
+  Agree / Disagree. Deployment details are in `deploy/README.md`.
+- **Labels today** are rules applied to the existing two-sided decisions. A failing metric
+  that moved in the better direction counts as an improvement; the direction is guessed
+  from the metric name until 5.7 declares it. Runs where every failing metric improved are
+  labelled `IMPROVED` with category `possible_baseline_false_positive`.
+- **App:** a separate Slack app for the agent (ARCHITECTURE.md section 10), with Socket
+  Mode, interactivity, and every phase's scopes requested up front. Jenkins keeps
+  `coreos-slack-notification-token` unchanged.
+- **Threading:** the agent replies under the Jenkins message, found by searching recent
+  channel history for the build URL, so Jenkins doesn't need to change. Storing `slack.ts`
+  from `slackSend` in status data is an optional improvement later.
 - **Content of a reply:** category, confidence, failed metrics with value, limit, and
   deviation, what changed, environment findings, the people tagged, and links to the
   Jenkins build, Kibana dashboard, and the audit record.
@@ -374,9 +384,11 @@ flowchart TD
 Overriding a result in ReportPortal used to double as reviewing it. Without ReportPortal,
 reviews come from:
 
-- **Phase 1:** the Jenkins override job (5.9). Running it on a run the agent classified
-  records agreement or disagreement. A Jenkins job that confirms the agent's call with one
-  click keeps this cheap.
+- **Agree / Disagree** on each run in the web UI now, and on each Slack reply once the
+  app is approved. A click records a review with the user's identity (cluster SSO in the
+  UI).
+- **The Jenkins override job** (5.9). Running it on a run the agent classified also
+  records agreement or disagreement. It's the path for changes made outside Slack.
 - **Phase 2:** Slack commands in the thread (section 7).
 
 ### 6.4 Exit criteria
@@ -394,10 +406,8 @@ runs per category, across at least 3 services. The numbers are to be agreed.
   `result_override: {previous, by, reason, at, audit_id}`, so every change can be reversed.
   Writes go through code with fixed rules. The LLM has no write tools.
 - **Interactive Slack.** Engineers @mention the bot in the run's thread. The agent answers
-  from that run's evidence bundle and can run the same read-only queries. This needs
-  `app_mentions:read` and `channels:history` scopes and socket mode with an app-level token
-  (no inbound endpoint). Either a separate Slack app, or new scopes on the existing one
-  with its owner's agreement.
+  from that run's evidence bundle and can run the same read-only queries. The agent's Slack
+  app already has the scopes for this from Phase 1.
 - **Corrections from engineers.** A command such as "@agent mark accepted" or "@agent this
   is a real regression" records a review through `review.py` and updates
   `baseline_eligible`.
@@ -545,7 +555,8 @@ The noise table from 5.1 is the starting point and the measure of progress.
    `runPRPerfTest`. What triggers the normal (non-PR) runs, and do they record which commits
    went into the deployed images? This decides how reliably a failure can be traced to a
    docs-only change or a dependency bump.
-3. Is `coreos-slack-notification-token` a bot token, and who owns the Slack app?
+3. Who approves Slack app requests on the Red Hat workspace, and is a security or data
+   review needed because thread content goes to an LLM? (ARCHITECTURE.md 10.2)
 4. Is ES write access available for the agent's service account (Phase 2), and who
    approves it?
 5. Window length for jobs that run rarely: is 30 days enough history?
