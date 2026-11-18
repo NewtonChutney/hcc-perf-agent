@@ -344,11 +344,12 @@ def test_identity(doc: dict) -> dict:
 
 
 def comparable_history(run: Run, metrics: list[str], size: int = 40,
-                       days: int | None = None) -> tuple[dict, dict[str, list[dict]]]:
+                       days: int | None = None, with_decisions: bool = True) -> tuple[dict, dict[str, list[dict]]]:
     """Last `size` runs of the same test up to this run, oldest first, per metric.
 
     Values come from status data, so non-gated metrics work too. Bands and results come
-    from the decisions uploaded right after each run (same time join as attach_status).
+    from the decisions uploaded right after each run (same time join as attach_status);
+    `with_decisions=False` skips that lookup when only values are needed.
     Returns (test identity, {metric: [points]}). Falls back to job-wide decision history
     (possibly mixing tests) only when this run has no status data.
     """
@@ -373,7 +374,7 @@ def comparable_history(run: Run, metrics: list[str], size: int = 40,
     if not docs:
         return ident, {m: [] for m in metrics}
     # Decisions for these runs: by build URL, plus a time range for documents without one.
-    decisions = _es("POST", f"{DECISIONS_INDEX}/_search", {
+    decisions = [] if not with_decisions else _es("POST", f"{DECISIONS_INDEX}/_search", {
         "size": 10000,
         "_source": ["description", "value", "lower_boundary", "upper_boundary", "result", "uploaded", "build_url"],
         "query": {"bool": {"filter": [
@@ -404,6 +405,7 @@ def comparable_history(run: Run, metrics: list[str], size: int = 40,
                 value = dec.get("value") if dec else None
             points.append({
                 "ended": d["ended"], "value": value, "pr": _is_pr(d), "run_result": d.get("result"),
+                "images": _images(d),
                 "lower_boundary": dec.get("lower_boundary") if dec else None,
                 "upper_boundary": dec.get("upper_boundary") if dec else None,
                 "result": dec.get("result") if dec else None,  # None: metric not gated in that run

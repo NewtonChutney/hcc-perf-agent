@@ -65,7 +65,7 @@ def readyz():
 
 
 @app.get("/", response_class=HTMLResponse)
-def runs_page(request: Request, days: int = 7, job: str = "", result: str = "FAIL", show_pr: bool = False,
+def runs_page(request: Request, days: int = 7, job: str = "", result: str = "", show_pr: bool = False,
               review: str = "", label: str = ""):
     days = max(1, min(days, 60))
     error = None

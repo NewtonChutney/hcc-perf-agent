@@ -13,11 +13,11 @@
   <label>Result
     <select name="result">
       {% for v, text, hint in [
+          ("", "all", ""),
           ("FAIL", "FAIL", "Still failing"),
           ("FAIL-PASS", "FAIL → PASS", "pass_or_fail said FAIL; a review changed it to PASS"),
           ("ERROR", "ERROR", "A check could not run"),
-          ("PASS", "PASS", "Passing now, including runs a review changed to PASS"),
-          ("", "all", "")] %}<option value="{{ v }}" title="{{ hint }}" {% if v == result %}selected{% endif %}>{{ text }}</option>{% endfor %}
+          ("PASS", "PASS", "Passing now, including runs a review changed to PASS")] %}<option value="{{ v }}" title="{{ hint }}" {% if v == result %}selected{% endif %}>{{ text }}</option>{% endfor %}
     </select>
   </label>
   <label>Agent label

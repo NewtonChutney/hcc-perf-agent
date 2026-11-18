@@ -372,10 +372,19 @@ flowchart TD
   5 runs. `fail_ratio` uses its absolute limit (0.01).
   - `IMPROVED`: every failing metric moved in the better direction.
   - `NOISE`: some failing metrics got worse, but each is inside its normal range.
+  - `OUTLIER`: worse moves are beyond the normal range, but nothing changed and it's a
+    one-off that has happened before. The run has the same images as the previous normal
+    run of the test, that run was inside the band, and at least 2 earlier runs in the last
+    90 days were at least as bad with the next run back to normal. Failure counts never
+    qualify. Example: Kessel CheckForUpdateBulk has an occasional slow mode (whole run
+    ~18% slower, then back to normal with the same images). `OUTLIER` predicts
+    `environment_failure` (ERROR), so the run stays out of the baseline.
   - `REGRESSION`: at least one worse move is beyond its normal range, or there's too little
-    history to tell.
+    history to tell. The summary says whether images changed, or why it isn't an `OUTLIER`
+    (for example, the previous run was beyond the band too: a sustained shift).
   - `IMPROVED` and `NOISE` predict `possible_baseline_false_positive` and count together
     toward that category's auto-apply bar (6.4). The Reviews page shows the label mix.
+    `OUTLIER` and `ERROR` likewise share `environment_failure`.
   - Known gap until step detection (5.5) exists: a lasting regression becomes the new median
     after enough runs and then looks like noise. Very noisy metrics get wide bands; those
     are candidates for `gate: false`.

@@ -84,6 +84,9 @@ Each decision in tool results carries `better` (guessed from the metric name: "l
 regressions from improvements. Worse moves also carry `beyond_normal_noise` and
 `normal_range`: the agent's own band from comparable runs (median +/- max(5%, 3x robust
 sigma)). A worse move inside the normal range is noise, not a regression (label NOISE).
+A move beyond it is an OUTLIER (a recurring one-off, kept out of the baseline) when the
+images match the previous normal run, that run was normal, and earlier one-off runs in the
+last 90 days were at least as bad (`seen_before`); otherwise it is a REGRESSION.
 
 Rules:
 - Use tools to answer; call several if needed. Never invent or estimate numbers: every
@@ -121,6 +124,8 @@ def _reading(r) -> dict:
     if r.verdict == "worse":
         out["beyond_normal_noise"] = r.beyond_noise
         out["vs_median_pct"] = r.vs_median_pct
+    if r.seen is not None:
+        out["seen_before"] = {"one_off_runs_at_least_this_bad": r.seen, "latest_build": r.seen_last}
     return out
 
 

@@ -10,16 +10,15 @@
   form.querySelector(".apply").hidden = true;
   let inflight = null, timer = null;
 
-  // Empty values are left out of the URL, except `result`: "result=" means all results,
-  // while no `result` means the default (FAIL).
+  // Empty values ("all") are left out of the URL.
   function queryFromForm() {
     const params = new URLSearchParams();
-    for (const [k, v] of new FormData(form)) if (v !== "" || k === "result") params.append(k, v);
+    for (const [k, v] of new FormData(form)) if (v !== "") params.append(k, v);
     return params.toString();
   }
 
   // Same defaults as runs_page() in app.py, for URLs without a parameter.
-  const DEFAULTS = {days: "7", result: "FAIL"};
+  const DEFAULTS = {days: "7"};
 
   function formFromQuery(query) {
     const params = new URLSearchParams(query);

@@ -46,8 +46,8 @@ NEVER_AUTO = {"true_failure", "requires_investigation"}
 def auto_apply_progress(reviews: list[dict]) -> list[dict]:
     """Per (job, agent category): reviews, agreement, and whether it meets the bar.
 
-    IMPROVED and NOISE both predict possible_baseline_false_positive and count together;
-    the label mix is reported so a record built mostly on one label is visible.
+    IMPROVED and NOISE both predict possible_baseline_false_positive and count together,
+    as do OUTLIER and ERROR for environment_failure; the label mix is reported so a record built mostly on one label is visible.
     """
     groups: dict[tuple[str, str], dict] = {}
     for r in reviews:

@@ -95,6 +95,38 @@ def test_worse_within_normal_noise_is_NOISE_not_REGRESSION():
     assert assess(run(d(m, 36.157, 32.008, 36.023)), {m: None}).label == "REGRESSION"
 
 
+def test_recurring_one_off_with_same_images_is_OUTLIER():
+    from agent.web.rules import Recurrence, noise_band
+    # InsightsKesselK6_runnerAPI #4594 (CheckForUpdateBulk): p95 2382 ms vs a 30-day median of
+    # ~2006 ms (band +-13.5%), same images as #4582, 12 earlier one-offs this slow in 90 days.
+    m = "results.requests.SUMMARY.95percentile"
+    history = [2105, 2089, 2106, 2123, 1910, 1944, 1979, 2135, 1994, 1961, 2356, 1973, 1957, 1918, 1975,
+               1982, 1993, 2154, 2028, 2069, 2046, 1858, 2005, 2029, 2126]
+    bands = {m: noise_band(history)}
+    r = run(d(m, 2382.45, 1982.19, 2380.35))
+    rec = Recurrence("4582", [], {m: (12, "3245")}, [])
+    a = assess(r, bands, rec)
+    assert a.label == "OUTLIER" and a.predicted_category == "environment_failure"
+    assert a.readings[0].seen == 12 and "#4582" in a.summary
+
+    # Any of these keeps it a REGRESSION:
+    changed = assess(r, bands, Recurrence("4582", ["kessel-inventory-api"], {m: (12, "3245")}, []))
+    assert changed.label == "REGRESSION" and "kessel-inventory-api" in changed.summary
+    sustained = assess(r, bands, Recurrence("4582", [], {m: (12, "3245")}, [m]))
+    assert sustained.label == "REGRESSION" and "sustained" in sustained.summary
+    assert assess(r, bands, Recurrence("4582", [], {m: (1, "3245")}, [])).label == "REGRESSION"
+    assert assess(r, bands, Recurrence("4582", None, {m: (12, "3245")}, [])).label == "REGRESSION"
+    assert assess(r, bands).label == "REGRESSION"  # no lookback
+
+
+def test_failures_are_never_an_outlier():
+    from agent.web.rules import Recurrence, noise_band
+    m = "results.requests.SUMMARY.num_failures"
+    bands = {m: noise_band([10, 11, 9, 10, 12, 10, 11])}
+    a = assess(run(d(m, 40, 9, 12)), bands, Recurrence("1", [], {m: (5, "0")}, []))
+    assert a.label == "REGRESSION" and "failures rose" in a.summary
+
+
 def test_fail_ratio_uses_absolute_limit():
     m = "results.requests.SUMMARY.fail_ratio"
     assert assess(run(d(m, 0.004, 0, 0.001)), {m: None}).label == "NOISE"       # under 1%
