@@ -138,7 +138,7 @@ def tool_list_runs(job: str | None = None, days: int = 7, result: str | None = N
     for r, a in zip(shown, evaluate_many(shown)):
         rows.append({
             "job": r.job_name, "build": r.build_number, "finished_utc": r.uploaded[:19],
-            "result": r.result, "label": a.label, "pr": bool(r.status and r.status["pr"]),
+            "result": r.current_result, "pass_or_fail_result": r.result, "label": a.label, "pr": bool(r.status and r.status["pr"]),
             "test": r.status["name"] if r.status else None,
             "failing": [{"metric": x.short_name, "verdict": x.verdict, "beyond_normal_noise": x.beyond_noise,
                          "outside_band_pct": round(x.deviation_pct, 2) if x.deviation_pct is not None else None}
@@ -154,7 +154,8 @@ def tool_get_run(job: str, build) -> dict:
     a = evaluate(run)
     s = run.status or {}
     return {
-        "job": job, "build": run.build_number, "build_url": run.build_url, "result": run.result,
+        "job": job, "build": run.build_number, "build_url": run.build_url,
+        "result": run.current_result, "pass_or_fail_result": run.result,
         "label": a.label, "summary": a.summary, "predicted_category": a.predicted_category,
         "test": s.get("name"), "started": s.get("started"), "ended": s.get("ended"),
         "golden": s.get("golden"), "pr": s.get("pr"), "parameters": s.get("test"), "images": s.get("images"),
@@ -312,9 +313,11 @@ TOOLS = {
         "list_jobs", "Jenkins jobs that produced pass_or_fail decisions recently.",
         {"days": {"type": "integer", "default": 30}})),
     "list_runs": (tool_list_runs, _schema(
-        "list_runs", "Recent runs (newest first) with result, agent label and failing metrics.",
+        "list_runs", "Recent runs (newest first) with result, agent label and failing metrics. `result` "
+        "is the current result (after reviews); `pass_or_fail_result` is what the check said.",
         {"job": _JOB, "days": {"type": "integer", "default": 7},
-         "result": {"type": "string", "enum": ["PASS", "FAIL", "ERROR"]},
+         "result": {"type": "string", "enum": ["PASS", "FAIL", "ERROR", "FAIL-PASS"],
+                    "description": "Current result; FAIL-PASS = pass_or_fail said FAIL, a review changed it to PASS."},
          "include_pr": {"type": "boolean", "default": False}, "limit": {"type": "integer", "default": 20}})),
     "get_run": (tool_get_run, _schema(
         "get_run", "One run: every gated metric with value, band, direction and verdict; test parameters; images.",

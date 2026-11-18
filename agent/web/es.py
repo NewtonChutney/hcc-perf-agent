@@ -60,6 +60,21 @@ class Run:
         return "ERROR" if "ERROR" in results else "FAIL" if "FAIL" in results else "PASS"
 
     @property
+    def current_result(self) -> str:
+        """The result now. `result` is what pass_or_fail said; status data holds the result that
+        dashboards and baselines use, and reviews (ours, earlier ReportPortal's) overwrite it. The
+        pipeline stores a pass_or_fail ERROR as FAIL there, so that pair is not a change."""
+        now = (self.status or {}).get("result")
+        if not now or (self.result == "ERROR" and now == "FAIL"):
+            return self.result
+        return now
+
+    @property
+    def overridden(self) -> bool:
+        """A review changed the result pass_or_fail gave."""
+        return self.current_result != self.result
+
+    @property
     def failed(self) -> list[Decision]:
         return [d for d in self.decisions if d.result == "FAIL"]
 
@@ -95,8 +110,18 @@ def _decision(src: dict) -> Decision:
     )
 
 
+def matches_result(run: Run, wanted: str) -> bool:
+    """`FAIL`, `ERROR` or `PASS` matches the run's current result. `FAIL-PASS` (any `SAID-NOW`)
+    matches runs that pass_or_fail said SAID about and a review changed to NOW."""
+    said, _, now = wanted.partition("-")
+    if now:
+        return run.result == said and run.current_result == now
+    return run.current_result == wanted
+
+
 def list_runs(days: int, job: str | None = None, result: str | None = None, limit: int = 200) -> list[Run]:
-    """Runs with decisions uploaded in the last `days`, newest first."""
+    """Runs with decisions uploaded in the last `days`, newest first; `result` as in
+    `matches_result`."""
     filters = [{"range": {"uploaded": {"gte": f"now-{days}d"}}}]
     if job:
         filters.append({"term": {"job_name.keyword": job}})
@@ -117,9 +142,17 @@ def list_runs(days: int, job: str | None = None, result: str | None = None, limi
         run = runs[url]
         run.decisions.append(_decision(src))
         run.uploaded = min(run.uploaded, src.get("uploaded", run.uploaded))
-    out = [r for r in runs.values() if not result or r.result == result][:limit]
+    out = list(runs.values())
+    if not result:
+        out = out[:limit]
+        attach_status(out)
+        return out
+    # The current result lives in status data, so status is needed before filtering.
+    said, _, now = result.partition("-")
+    if now:  # only runs pass_or_fail said SAID about can have been changed from it
+        out = [r for r in out if r.result == said]
     attach_status(out)
-    return out
+    return [r for r in out if matches_result(r, result)][:limit]
 
 
 def get_run(job: str, number: str) -> Run | None:

@@ -52,6 +52,6 @@
 {% else %}
 <p class="muted">Nothing to review: the run passed.</p>
 {% endif %}
-{% if run.status and run.status.result and run.status.result != run.result %}
-<p class="small">pass_or_fail said <b>{{ run.result }}</b>; the stored result is now <b>{{ run.status.result }}</b> (changed by a review or ReportPortal).</p>
+{% if run.overridden %}
+<p class="small">pass_or_fail said <b>{{ run.result }}</b>; the stored result is now <b>{{ run.current_result }}</b> (changed by a review or ReportPortal).</p>
 {% endif %}
