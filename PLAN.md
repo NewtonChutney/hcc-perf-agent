@@ -481,17 +481,18 @@ checking.
 
 | ReportPortal did | Replacement |
 |---|---|
-| Place to override a verdict | Jenkins override job (5.9); Slack commands in Phase 2 |
-| Record of who changed what and why | `comments` on the status-data document, `result_override`, and `insights_perf_triage_reviews` |
-| List of untriaged failures | Kibana dashboard: FAIL runs with no review record, agent classifications, accuracy per service |
-| Defect types (`no_defect`, `system_issue`, ...) | The `category` field in review records, plus `result` and `baseline_eligible` on status data |
-| Sync to ES (`UtilResultsFromRPToES`) | Not needed: overrides are written to ES directly |
+| Place to override a verdict | **Web UI review (live)**: Agree/Disagree sets `result` on status data and `results-dashboard-data` for users in `WRITEBACK_USERS`. Jenkins override job (5.9) as the fallback when the UI is down; Slack commands in Phase 2 |
+| Record of who changed what and why | `comments` on the status-data document (author, date, text), and the review in `insights_perf_triage_reviews` with `writeback.result_before`/`result_after` |
+| List of untriaged failures | Web UI runs page: Review column and the "review pending" filter. A Kibana dashboard is optional |
+| Defect types (`no_defect`, `system_issue`, ...) | Review category, mapped the way RP's sync mapped defect types: `possible_baseline_false_positive` → PASS, `environment_failure` → ERROR, the rest → FAIL. `baseline_eligible` comes later (5.6) |
+| Sync to ES (`UtilResultsFromRPToES`) | Not needed: the review writes to ES directly |
 | Historical triage decisions | One-time export to ES (5.10) |
 
 Order of shutdown:
 
 1. Export ReportPortal history (5.10).
-2. Make the Jenkins override job available (5.9).
+2. Make overrides available without ReportPortal: the web UI review (done), and the Jenkins
+   override job (5.9) as the fallback.
 3. Stop the ReportPortal upload step in the CPT pipelines.
 4. Retire `UtilResultsFromRPToES`.
 

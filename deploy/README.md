@@ -54,6 +54,27 @@ Deployment.
 To run a branch build, run `oc tag --scheduled ghcr.io/newtonchutney/hcc-perf-agent:<branch> hcc-perf-agent:latest`.
 The next `oc apply -k deploy/base` resets it to `main`.
 
+## Reviews change results (ReportPortal replacement)
+
+A review by a user in `WRITEBACK_USERS` sets the run's `result` the way
+`UtilResultsFromRPToES` did for ReportPortal overrides:
+
+| Review category | Result | RP defect type it replaces |
+|---|---|---|
+| `possible_baseline_false_positive` | PASS | `no_defect` |
+| `environment_failure` | ERROR | `system_issue` |
+| `true_failure`, `known_issue`, `requires_investigation` | FAIL | `product_bug`, `to_investigate` |
+
+- **What it writes:** `result` plus a `comments` entry (author, date, reason) on the
+  status-data document, and `result` on the matching `results-dashboard-data` document.
+- **Effect on baselines:** baseline queries take golden runs with `result: PASS`, so a
+  review that sets PASS adds the run to later baselines, just as an RP override did.
+- **Who:** edit `WRITEBACK_USERS` in `deploy/base/deployment.yaml` (cluster user names,
+  comma-separated, or `*`). Other users' reviews are recorded but don't change results.
+- **Undo:** submit a corrected review; the new category sets the result again and adds
+  another comment.
+- **Off switch:** `WRITEBACK_ENABLED=false`.
+
 ## Chat (optional)
 
 The Chat page and the panel on each run page answer questions with an EnMaaS model.

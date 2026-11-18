@@ -43,7 +43,7 @@
       <td><a href="/runs/{{ r.job_name }}/{{ r.build_number }}">#{{ r.build_number }}</a>
         {% if r.status and r.status.pr %}<span class="tag pr">PR</span>{% endif %}</td>
       <td>{{ r.status.name if r.status else "" }}</td>
-      <td>{{ tag(r.result) }}</td>
+      <td class="nowrap">{% if r.status and r.status.result and r.status.result != r.result %}<s class="muted" title="pass_or_fail said {{ r.result }}">{{ r.result }}</s> {{ tag(r.status.result) }}{% else %}{{ tag(r.result) }}{% endif %}</td>
       <td>{{ tag(a.label) }}</td>
       <td class="metrics">
         {% for m in a.readings if m.decision.result == "FAIL" %}{{ metric_chip(m) }} {% endfor %}

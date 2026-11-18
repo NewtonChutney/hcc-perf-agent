@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from . import alerts, chat, es, fmt
+from . import alerts, chat, es, fmt, writeback
 from .charts import sparkline
 from .rules import CATEGORIES, assess
 
@@ -100,9 +100,13 @@ def run_page(request: Request, job: str, number: str, saved: bool = False):
     metrics = [r.decision.metric for r in assessment.readings]
     test, history = es.comparable_history(run, metrics)
     charts = {m: sparkline(points, highlight_url=run.build_url) for m, points in history.items()}
+    user = current_user(request)
     return templates.TemplateResponse(request, "run.html", dict(
         run=run, a=assessment, charts=charts, test=test, review=es.get_review(run.review_id),
-        categories=CATEGORIES, saved=saved, user=current_user(request)))
+        categories=CATEGORIES, saved=saved, user=user,
+        can_write=writeback.allowed(user),
+        agree_plan=writeback.planned(run, assessment.predicted_category),
+        result_for=writeback.RESULT_FOR_CATEGORY))
 
 
 @app.post("/runs/{job}/{number}/review")
@@ -126,6 +130,11 @@ def submit_review(request: Request, job: str, number: str,
         raise HTTPException(400, "bug URL must use https://")
     if category == "known_issue" and not bug_url:
         raise HTTPException(400, "known_issue needs a bug URL")
+    explanation = explanation.strip()[:4000]
+    try:
+        outcome = writeback.apply(run, category, user, explanation, bug_url or None, a.predicted_category)
+    except requests.RequestException as exc:
+        outcome = {"status": "failed", "error": str(exc)[:500]}
     es.save_review(run.review_id, {
         "run_id": run.review_id,
         "job_name": job,
@@ -133,11 +142,12 @@ def submit_review(request: Request, job: str, number: str,
         "predicted_category": a.predicted_category,
         "predicted_label": a.label,
         "category": category,
-        "explanation": explanation.strip()[:4000],
+        "explanation": explanation,
         "bug_url": bug_url or None,
         "signature": sorted(d.metric for d in run.failed),
         "reviewer": user,
         "source": "web-ui",
+        "writeback": outcome,
     })
     return RedirectResponse(f"/runs/{job}/{number}?saved=1", status_code=303)
 
@@ -164,7 +174,8 @@ def chat_page(request: Request):
     return templates.TemplateResponse(request, "chat.html", dict(user=current_user(request)))
 
 
-templates.env.globals.update(chat_models=lambda: chat.MODELS, chat_default_model=lambda: chat.LLM_MODEL)
+templates.env.globals.update(chat_models=lambda: chat.MODELS, chat_default_model=lambda: chat.LLM_MODEL,
+                             writeback_enabled=writeback.enabled)
 
 
 @app.post("/api/chat")

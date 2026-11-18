@@ -37,6 +37,14 @@ spec:
               value: https://api.enmaas.devshift.net/v1
             - name: LLM_MODEL
               value: rits/zai-org/glm-5-3
+            # Reviews set the run's result in status data and results-dashboard-data, replacing
+            # ReportPortal overrides (agent/web/writeback.py). Only these users can change results
+            # (comma-separated cluster user names, "*" = anyone signed in); others' reviews are
+            # recorded without changing results. Set WRITEBACK_ENABLED=false to stop all writes.
+            - name: WRITEBACK_ENABLED
+              value: "true"
+            - name: WRITEBACK_USERS
+              value: nmucheli
             # EnMaaS is unreachable directly from rdu3 (connect timeout); reachable via the corp proxy.
             - name: LLM_PROXY
               value: http://squid.corp.redhat.com:3128

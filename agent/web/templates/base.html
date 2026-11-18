@@ -18,7 +18,7 @@
   <span class="user">{{ user|who if user else "not signed in" }}</span>
 </header>
 <main>
-  <p class="banner">Report-only preview. Labels are rules applied to today's <code>pass_or_fail</code> decisions; nothing is changed in Jenkins or status data. Reviews are stored in <code>insights_perf_triage_reviews</code>.</p>
+  <p class="banner">Labels are rules applied to today's <code>pass_or_fail</code> decisions. Reviews are stored in <code>insights_perf_triage_reviews</code>{% if writeback_enabled() %}; a review by an allowed user also sets the run's result in status data and the results dashboard, as ReportPortal overrides did{% else %}; results are not changed{% endif %}.</p>
   {% block content %}{% endblock %}
 </main>
 </body>
