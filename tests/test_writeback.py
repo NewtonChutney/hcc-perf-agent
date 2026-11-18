@@ -41,6 +41,23 @@ def test_load_window_covers_upload_only_timestamps():
         == ("2026-11-12T14:03:59+00:00", "2026-11-12T14:07:01+00:00")
 
 
+def test_auto_apply_bar_is_per_service_and_category():
+    fp = "possible_baseline_false_positive"
+    reviews = ([{"job_name": "Kessel", "predicted_category": fp, "category": fp}] * 50
+               + [{"job_name": "Notif", "predicted_category": fp, "category": fp}] * 10
+               + [{"job_name": "Inv", "predicted_category": fp, "category": fp}] * 47
+               + [{"job_name": "Inv", "predicted_category": fp, "category": "true_failure"}] * 3
+               + [{"job_name": "Kessel", "predicted_category": "requires_investigation",
+                   "category": "requires_investigation"}] * 60)
+    got = {(p["job"], p["category"]): p["status"] for p in writeback.auto_apply_progress(reviews)}
+    assert got == {
+        ("Kessel", fp): "meets the bar",              # qualifies alone; no 3-service gate
+        ("Notif", fp): "40 more reviews needed",
+        ("Inv", fp): "agreement below 95%",           # 47/50 = 94%
+        ("Kessel", "requires_investigation"): "always reviewed by a person",
+    }
+
+
 def test_planned():
     assert writeback.planned(run_with_status("FAIL"), "possible_baseline_false_positive") == \
         {"old": "FAIL", "new": "PASS", "changes": True}

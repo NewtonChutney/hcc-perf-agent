@@ -393,15 +393,20 @@ reviews come from:
 
 ### 6.4 Exit criteria
 
-`review.py stats` shows at least 95% agreement with reviewers over at least 50 reviewed
-runs per category, across at least 3 services. The numbers are to be agreed.
+Judged separately for each service (Jenkins job) and category: at least 95% agreement
+with reviewers over at least 50 reviewed runs of that category for that service. A service
+qualifies on its own record; other services' reviews don't count toward it, and it doesn't
+wait for other services. The Reviews page in the web UI shows progress per service and
+category. The numbers are to be agreed.
 
 ---
 
 ## 7. Phase 2: applying corrections and interactive Q&A
 
-- **Allowlist.** The agent applies corrections on its own only for categories that met the
-  Phase 1 exit criteria. `true_failure` and `requires_investigation` always go to a human.
+- **Allowlist.** The agent applies corrections on its own only for (service, category)
+  pairs that met the Phase 1 exit criteria, e.g. `possible_baseline_false_positive` for
+  `InsightsKesselK6_runnerAPI` once that job has 50 such reviews at 95% or better.
+  `true_failure` and `requires_investigation` always go to a human.
 - **What gets written.** The verdict and `baseline_eligible` are written to ES with
   `result_override: {previous, by, reason, at, audit_id}`, so every change can be reversed.
   Writes go through code with fixed rules. The LLM has no write tools.

@@ -35,6 +35,36 @@ RESULT_FOR_CATEGORY = {
     "requires_investigation": "FAIL",             # RP to_investigate
 }
 DASHBOARD_INDEX = os.environ.get("DASHBOARD_INDEX", "results-dashboard-data")
+
+# Bar for the agent to apply a category on its own (PLAN.md 6.4 and 7), judged per service
+# (Jenkins job) and category. Auto-apply itself isn't built yet; the Reviews page shows progress.
+AUTO_APPLY_MIN_REVIEWS = int(os.environ.get("AUTO_APPLY_MIN_REVIEWS", "50"))
+AUTO_APPLY_MIN_AGREEMENT = float(os.environ.get("AUTO_APPLY_MIN_AGREEMENT", "95"))
+NEVER_AUTO = {"true_failure", "requires_investigation"}
+
+
+def auto_apply_progress(reviews: list[dict]) -> list[dict]:
+    """Per (job, agent category): reviews, agreement, and whether it meets the bar."""
+    groups: dict[tuple[str, str], list[int]] = {}
+    for r in reviews:
+        if r.get("predicted_category"):
+            g = groups.setdefault((r.get("job_name") or "?", r["predicted_category"]), [0, 0])
+            g[0] += 1
+            g[1] += r.get("category") == r["predicted_category"]
+    out = []
+    for (job, cat), (n, agreed) in sorted(groups.items()):
+        pct = 100 * agreed / n
+        if cat in NEVER_AUTO:
+            status = "always reviewed by a person"
+        elif n < AUTO_APPLY_MIN_REVIEWS:
+            status = f"{AUTO_APPLY_MIN_REVIEWS - n} more reviews needed"
+        elif pct < AUTO_APPLY_MIN_AGREEMENT:
+            status = f"agreement below {AUTO_APPLY_MIN_AGREEMENT:g}%"
+        else:
+            status = "meets the bar"
+        out.append({"job": job, "category": cat, "reviewed": n, "agreed": agreed, "pct": pct,
+                    "status": status, "eligible": status == "meets the bar"})
+    return out
 log = logging.getLogger("hcc-perf-agent.writeback")
 
 

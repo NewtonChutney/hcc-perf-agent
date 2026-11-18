@@ -168,13 +168,10 @@ def reviews_page(request: Request):
         reviews = es.list_reviews()
     except requests.RequestException as exc:
         error = f"Elasticsearch request failed: {exc}"
-    by_job = collections.defaultdict(lambda: [0, 0])
-    for r in reviews:
-        if r.get("predicted_category"):
-            by_job[r.get("job_name", "?")][0] += 1
-            by_job[r.get("job_name", "?")][1] += r.get("category") == r.get("predicted_category")
     return templates.TemplateResponse(request, "reviews.html", dict(
-        reviews=reviews, by_job=dict(sorted(by_job.items())), error=error, user=current_user(request)))
+        reviews=reviews, progress=writeback.auto_apply_progress(reviews), error=error,
+        min_reviews=writeback.AUTO_APPLY_MIN_REVIEWS, min_agreement=writeback.AUTO_APPLY_MIN_AGREEMENT,
+        user=current_user(request)))
 
 
 @app.get("/chat", response_class=HTMLResponse)
