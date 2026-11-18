@@ -38,27 +38,29 @@ DASHBOARD_INDEX = os.environ.get("DASHBOARD_INDEX", "results-dashboard-data")
 
 # Bar for the agent to apply a category on its own (PLAN.md 6.4 and 7), judged per service
 # (Jenkins job) and category. Auto-apply itself isn't built yet; the Reviews page shows progress.
-AUTO_APPLY_MIN_REVIEWS = int(os.environ.get("AUTO_APPLY_MIN_REVIEWS", "50"))
+AUTO_APPLY_MIN_REVIEWS = int(os.environ.get("AUTO_APPLY_MIN_REVIEWS", "10"))
 AUTO_APPLY_MIN_AGREEMENT = float(os.environ.get("AUTO_APPLY_MIN_AGREEMENT", "95"))
 NEVER_AUTO = {"true_failure", "requires_investigation"}
 
 
 def auto_apply_progress(reviews: list[dict]) -> list[dict]:
-    """Per (job, agent label): reviews, agreement, and whether it meets the bar.
+    """Per (job, agent category): reviews, agreement, and whether it meets the bar.
 
-    Grouped by label, not only category: IMPROVED and NOISE both predict
-    possible_baseline_false_positive, but agreement on clear improvements says nothing
-    about calls where a metric got worse, so each label earns auto-apply separately.
+    IMPROVED and NOISE both predict possible_baseline_false_positive and count together;
+    the label mix is reported so a record built mostly on one label is visible.
     """
-    groups: dict[tuple[str, str, str], list[int]] = {}
+    groups: dict[tuple[str, str], dict] = {}
     for r in reviews:
         if r.get("predicted_category"):
-            key = (r.get("job_name") or "?", r.get("predicted_label") or "?", r["predicted_category"])
-            g = groups.setdefault(key, [0, 0])
-            g[0] += 1
-            g[1] += r.get("category") == r["predicted_category"]
+            g = groups.setdefault((r.get("job_name") or "?", r["predicted_category"]),
+                                  {"n": 0, "agreed": 0, "labels": {}})
+            g["n"] += 1
+            g["agreed"] += r.get("category") == r["predicted_category"]
+            label = r.get("predicted_label") or "?"
+            g["labels"][label] = g["labels"].get(label, 0) + 1
     out = []
-    for (job, label, cat), (n, agreed) in sorted(groups.items()):
+    for (job, cat), g in sorted(groups.items()):
+        n, agreed = g["n"], g["agreed"]
         pct = 100 * agreed / n
         if cat in NEVER_AUTO:
             status = "always reviewed by a person"
@@ -68,8 +70,8 @@ def auto_apply_progress(reviews: list[dict]) -> list[dict]:
             status = f"agreement below {AUTO_APPLY_MIN_AGREEMENT:g}%"
         else:
             status = "meets the bar"
-        out.append({"job": job, "label": label, "category": cat, "reviewed": n, "agreed": agreed,
-                    "pct": pct, "status": status, "eligible": status == "meets the bar"})
+        out.append({"job": job, "category": cat, "labels": dict(sorted(g["labels"].items())), "reviewed": n,
+                    "agreed": agreed, "pct": pct, "status": status, "eligible": status == "meets the bar"})
     return out
 log = logging.getLogger("hcc-perf-agent.writeback")
 

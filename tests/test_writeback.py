@@ -45,20 +45,23 @@ def test_auto_apply_bar_is_per_service_and_category():
     fp = "possible_baseline_false_positive"
     def rv(job, label, cat, said=None):
         return {"job_name": job, "predicted_label": label, "predicted_category": cat, "category": said or cat}
-    reviews = ([rv("Kessel", "IMPROVED", fp)] * 50
-               + [rv("Kessel", "NOISE", fp)] * 4         # same category, different label: tracked apart
-               + [rv("Notif", "IMPROVED", fp)] * 10
-               + [rv("Inv", "IMPROVED", fp)] * 47
-               + [rv("Inv", "IMPROVED", fp, "true_failure")] * 3
+    reviews = ([rv("Kessel", "IMPROVED", fp)] * 7
+               + [rv("Kessel", "NOISE", fp)] * 3         # same category: pooled with IMPROVED
+               + [rv("Notif", "IMPROVED", fp)] * 4
+               + [rv("Inv", "IMPROVED", fp)] * 18
+               + [rv("Inv", "NOISE", fp, "true_failure")] * 2
                + [rv("Kessel", "REGRESSION", "requires_investigation")] * 60)
-    got = {(p["job"], p["label"]): p["status"] for p in writeback.auto_apply_progress(reviews)}
+    progress = writeback.auto_apply_progress(reviews)
+    got = {(p["job"], p["category"]): p["status"] for p in progress}
+    assert writeback.AUTO_APPLY_MIN_REVIEWS == 10
     assert got == {
-        ("Kessel", "IMPROVED"): "meets the bar",          # qualifies alone; no 3-service gate
-        ("Kessel", "NOISE"): "46 more reviews needed",    # IMPROVED's record doesn't carry over
-        ("Notif", "IMPROVED"): "40 more reviews needed",
-        ("Inv", "IMPROVED"): "agreement below 95%",       # 47/50 = 94%
-        ("Kessel", "REGRESSION"): "always reviewed by a person",
+        ("Kessel", fp): "meets the bar",              # 10/10; qualifies alone, no 3-service gate
+        ("Notif", fp): "6 more reviews needed",
+        ("Inv", fp): "agreement below 95%",           # 18/20 = 90%
+        ("Kessel", "requires_investigation"): "always reviewed by a person",
     }
+    assert next(p for p in progress if p["job"] == "Kessel" and p["category"] == fp)["labels"] == \
+        {"IMPROVED": 7, "NOISE": 3}
 
 
 def test_planned():

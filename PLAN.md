@@ -374,8 +374,8 @@ flowchart TD
   - `NOISE`: some failing metrics got worse, but each is inside its normal range.
   - `REGRESSION`: at least one worse move is beyond its normal range, or there's too little
     history to tell.
-  - `IMPROVED` and `NOISE` predict `possible_baseline_false_positive`. Their review records
-    are counted separately for auto-apply.
+  - `IMPROVED` and `NOISE` predict `possible_baseline_false_positive` and count together
+    toward that category's auto-apply bar (6.4). The Reviews page shows the label mix.
   - Known gap until step detection (5.5) exists: a lasting regression becomes the new median
     after enough runs and then looks like noise. Very noisy metrics get wide bands; those
     are candidates for `gate: false`.
@@ -404,10 +404,10 @@ reviews come from:
 ### 6.4 Exit criteria
 
 Judged separately for each service (Jenkins job) and category: at least 95% agreement
-with reviewers over at least 50 reviewed runs of that category for that service. A service
-qualifies on its own record; other services' reviews don't count toward it, and it doesn't
-wait for other services. The Reviews page in the web UI shows progress per service and
-category. The numbers are to be agreed.
+with reviewers over at least 10 reviewed runs of that category for that service
+(`AUTO_APPLY_MIN_REVIEWS`, `AUTO_APPLY_MIN_AGREEMENT`). A service qualifies on its own
+record; other services' reviews don't count toward it, and it doesn't wait for other
+services. The Reviews page in the web UI shows progress per service and category.
 
 ---
 
@@ -415,7 +415,7 @@ category. The numbers are to be agreed.
 
 - **Allowlist.** The agent applies corrections on its own only for (service, category)
   pairs that met the Phase 1 exit criteria, e.g. `possible_baseline_false_positive` for
-  `InsightsKesselK6_runnerAPI` once that job has 50 such reviews at 95% or better.
+  `InsightsKesselK6_runnerAPI` once that job has 10 such reviews at 95% or better.
   `true_failure` and `requires_investigation` always go to a human.
 - **What gets written.** The verdict and `baseline_eligible` are written to ES with
   `result_override: {previous, by, reason, at, audit_id}`, so every change can be reversed.
