@@ -37,6 +37,9 @@ spec:
               value: https://api.enmaas.devshift.net/v1
             - name: LLM_MODEL
               value: rits/zai-org/glm-5-3
+            # EnMaaS is unreachable directly from rdu3 (connect timeout); reachable via the corp proxy.
+            - name: LLM_PROXY
+              value: http://squid.corp.redhat.com:3128
           volumeMounts:
             - name: llm
               mountPath: /var/run/secrets/llm

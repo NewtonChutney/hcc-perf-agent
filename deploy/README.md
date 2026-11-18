@@ -67,6 +67,10 @@ oc --context $C -n hceperf--runtime-int create secret generic hcc-perf-agent-llm
 oc --context $C -n hceperf--runtime-int rollout restart deploy/hcc-perf-agent
 ```
 
+Pods on rdu3 can't connect to EnMaaS directly (the connection times out, probably an
+allowlist on EnMaaS). So LLM calls go through `squid.corp.redhat.com:3128` (`LLM_PROXY`),
+while ES traffic stays direct.
+
 Each question is logged with the user, the tools called, and the duration (`oc logs
 deploy/hcc-perf-agent -c app`). Answers aren't stored.
 

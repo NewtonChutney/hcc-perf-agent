@@ -25,6 +25,9 @@ LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.enmaas.devshift.net/v
 LLM_MODEL = os.environ.get("LLM_MODEL", "rits/zai-org/glm-5-3")
 LLM_KEY_FILE = pathlib.Path(os.environ.get("LLM_API_KEY_FILE", "/var/run/secrets/llm/api-key"))
 LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "120"))
+# rdu3 can't reach EnMaaS directly (connections time out); the corporate proxy can.
+# Only LLM calls use it; ES and other internal traffic stay direct.
+LLM_PROXY = os.environ.get("LLM_PROXY", "")
 MAX_TOOL_ROUNDS = 8
 MAX_TOOL_RESULT_CHARS = 24000
 MAX_HISTORY_MESSAGES = 20
@@ -297,6 +300,7 @@ class ChatUnavailable(Exception):
 
 def _complete(messages: list[dict]) -> dict:
     r = requests.post(f"{LLM_BASE_URL}/chat/completions", timeout=LLM_TIMEOUT,
+                      proxies={"https": LLM_PROXY, "http": LLM_PROXY} if LLM_PROXY else None,
                       headers={"Authorization": f"Bearer {_api_key()}"},
                       json={"model": LLM_MODEL, "messages": messages, "temperature": 0.2, "max_tokens": 4000,
                             "tools": [schema for _, schema in TOOLS.values()], "tool_choice": "auto"})
