@@ -68,6 +68,7 @@ def readyz():
 
 
 MAX_ROWS = 200  # rows the runs page shows, newest first, after every filter
+MAX_DAYS = 30   # labels are computed on page load, so the range is kept to what people browse
 
 
 def _filtered_runs(days: int, job: str, result: str, show_pr: bool, review: str, label: str):
@@ -109,7 +110,7 @@ def _filtered_runs(days: int, job: str, result: str, show_pr: bool, review: str,
 @app.get("/", response_class=HTMLResponse)
 def runs_page(request: Request, days: int = 7, job: str = "", result: str = "", show_pr: bool = False,
               review: str = "", label: str = ""):
-    days = max(1, min(days, 60))
+    days = max(1, min(days, MAX_DAYS))
     error = None
     rows, jobs, matched = [], [], 0
     try:
@@ -126,7 +127,7 @@ def runs_page(request: Request, days: int = 7, job: str = "", result: str = "", 
     # URL stays the same as the full page's, so responses must not be cached interchangeably.
     partial = request.headers.get("x-partial") == "1"
     response = templates.TemplateResponse(request, "_runs_results.html" if partial else "runs.html", dict(
-        rows=rows, matched=matched, max_rows=MAX_ROWS, jobs=jobs, days=days, job=job, result=result,
+        rows=rows, matched=matched, max_rows=MAX_ROWS, max_days=MAX_DAYS, jobs=jobs, days=days, job=job, result=result,
         show_pr=show_pr, review=review,
         label=label, labels=LABELS, pending=pending, counts=counts, error=error, user=user, here=here,
         can_write=writeback.allowed(user), result_for=writeback.RESULT_FOR_CATEGORY))
