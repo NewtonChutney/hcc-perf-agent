@@ -8,6 +8,7 @@ tool trace is shown next to each answer so people can check.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ import time
 
 import requests
 
-from . import es
+from . import aws, es
 from .rules import assess, better_direction
 
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.enmaas.devshift.net/v1").rstrip("/")
@@ -36,9 +37,9 @@ MODELS: dict[str, str] = dict(
 MODELS.setdefault(LLM_MODEL, LLM_MODEL)
 LLM_KEY_FILE = pathlib.Path(os.environ.get("LLM_API_KEY_FILE", "/var/run/secrets/llm/api-key"))
 LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "120"))
-# rdu3 can't reach EnMaaS directly (connections time out); the corporate proxy can.
-# Only LLM calls use it; ES and other internal traffic stay direct.
-LLM_PROXY = os.environ.get("LLM_PROXY", "")
+# rdu3 can't reach EnMaaS or AWS directly (connections time out); the corporate proxy can.
+# External calls (LLM, AWS) use it; ES and other internal traffic stay direct.
+EGRESS_PROXY = os.environ.get("EGRESS_PROXY", "")
 MAX_TOOL_ROUNDS = 8
 MAX_TOOL_RESULT_CHARS = 24000
 MAX_HISTORY_MESSAGES = 20
@@ -66,6 +67,10 @@ Data you can read through tools (read-only):
   [lower, upper] it was checked against, and PASS/FAIL/ERROR.
 - status data: everything the run recorded (test parameters, image tags, all measured
   metrics, including ones that are not gated).
+- AWS (live, read-only): for the RDS databases behind a run, Performance Insights DB load,
+  top SQL and wait events, and CloudWatch metrics over the run's window (rds_metrics). Use
+  it when database behaviour could explain a result, and compare with the previous run
+  of the same test.
 
 A Jenkins job can rotate through several tests (different scenarios, transports, durations)
 with very different baselines, so consecutive builds of a job are often different tests.
@@ -247,6 +252,44 @@ def tool_compare_runs(job: str, build_b, build_a=None) -> dict:
             "test_a": test_a, "test_b": test_b, "metrics": rows, "changed_images": images}
 
 
+def tool_list_rds_instances() -> dict:
+    if not aws.enabled():
+        return {"error": "AWS access is not configured"}
+    return {"instances": aws.instances()}
+
+
+def _parse_time(s: str) -> dt.datetime:
+    t = dt.datetime.fromisoformat(s.replace("Z", "+00:00"))
+    return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
+
+
+def tool_rds_metrics(job: str | None = None, build=None, instance: str | None = None,
+                     start: str | None = None, end: str | None = None) -> dict:
+    """RDS evidence for a run's window (job+build) or an explicit instance and window."""
+    if not aws.enabled():
+        return {"error": "AWS access is not configured"}
+    if job and build:
+        run, err = _run_or_error(job, build)
+        if err:
+            return err
+        if not run.status or not run.status.get("window"):
+            return {"error": "run has no status data with start/end times"}
+        pad = dt.timedelta(minutes=1)
+        t0, t1 = (_parse_time(t) for t in run.status["window"])
+        t0, t1 = t0 - pad, t1 + pad
+        names = list((run.status.get("images") or {}).keys())
+        targets = [instance] if instance else aws.guess_instances(names)
+        if not targets:
+            return {"error": f"no RDS instance matches this run's pods {names}; pass `instance` "
+                              "(see list_rds_instances)"}
+    elif instance and start and end:
+        t0, t1, targets = _parse_time(start), _parse_time(end), [instance]
+    else:
+        return {"error": "give job and build, or instance with start and end (ISO, UTC)"}
+    return {"window_utc": [t0.isoformat(), t1.isoformat()], "matched_instances": targets[:3],
+            "reports": [aws.window_report(i, t0, t1) for i in targets[:3]]}
+
+
 def _schema(name, description, properties, required=()):
     return {"type": "function", "function": {"name": name, "description": description, "parameters": {
         "type": "object", "properties": properties, "required": list(required)}}}
@@ -283,6 +326,15 @@ TOOLS = {
         "compare_runs", "Compare gated metrics and image tags of build_b against build_a "
                         "(default: the previous run of the same test). Reports whether both ran the same test.",
         {"job": _JOB, "build_b": _BUILD, "build_a": _BUILD}, ["job", "build_b"])),
+    "list_rds_instances": (tool_list_rds_instances, _schema(
+        "list_rds_instances", "RDS databases in the perf AWS account (name, engine, class, Performance Insights).", {})),
+    "rds_metrics": (tool_rds_metrics, _schema(
+        "rds_metrics", "Live AWS evidence for the database(s) behind a run, over the run's time window: "
+                       "Performance Insights DB load, CPU, IOPS, top SQL and wait events by load, and CloudWatch "
+                       "(connections, memory, latency, IOPS). Give job+build (instances are matched from the run's "
+                       "pods), or instance+start+end. Call it for two runs to compare them.",
+        {"job": _JOB, "build": _BUILD, "instance": {"type": "string", "description": "RDS instance, e.g. kessel-inventory-perf"},
+         "start": {"type": "string", "description": "ISO time, UTC"}, "end": {"type": "string", "description": "ISO time, UTC"}})),
 }
 
 
@@ -327,7 +379,7 @@ class ChatUnavailable(Exception):
 
 def _complete(messages: list[dict], model: str = LLM_MODEL) -> dict:
     r = requests.post(f"{LLM_BASE_URL}/chat/completions", timeout=LLM_TIMEOUT,
-                      proxies={"https": LLM_PROXY, "http": LLM_PROXY} if LLM_PROXY else None,
+                      proxies={"https": EGRESS_PROXY, "http": EGRESS_PROXY} if EGRESS_PROXY else None,
                       headers={"Authorization": f"Bearer {_api_key()}"},
                       json={"model": model, "messages": messages, "temperature": 0.2, "max_tokens": 4000,
                             "tools": [schema for _, schema in TOOLS.values()], "tool_choice": "auto"})

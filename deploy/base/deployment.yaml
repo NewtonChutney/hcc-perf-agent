@@ -44,10 +44,19 @@ spec:
             - name: WRITEBACK_ENABLED
               value: "true"
             - name: WRITEBACK_USERS
-              value: nmucheli
-            # EnMaaS is unreachable directly from rdu3 (connect timeout); reachable via the corp proxy.
-            - name: LLM_PROXY
+              value: "*"
+            # rdu3 can't reach EnMaaS or AWS directly (connect timeout); both work via the corp proxy.
+            # ES stays direct.
+            - name: EGRESS_PROXY
               value: http://squid.corp.redhat.com:3128
+            # Live RDS evidence for chat: perf team's Performance Insights reader key, copied from
+            # rhperfcluster cpt/iperf-secret (AWS_PI_READ_ONLY_*). Optional: chat works without it.
+            - name: AWS_REGION
+              valueFrom: {secretKeyRef: {name: hcc-perf-agent-aws, key: AWS_REGION, optional: true}}
+            - name: AWS_PI_ACCESS_KEY_ID
+              valueFrom: {secretKeyRef: {name: hcc-perf-agent-aws, key: PI_ACCESS_KEY_ID, optional: true}}
+            - name: AWS_PI_SECRET_ACCESS_KEY
+              valueFrom: {secretKeyRef: {name: hcc-perf-agent-aws, key: PI_SECRET_ACCESS_KEY, optional: true}}
           volumeMounts:
             - name: llm
               mountPath: /var/run/secrets/llm

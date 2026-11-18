@@ -28,6 +28,19 @@ def test_switch_and_allowlist(monkeypatch):
     assert writeback.allowed("anyone@cluster.local")
 
 
+def test_load_window_covers_upload_only_timestamps():
+    from agent.web.es import load_window
+    # kessel: started/ended are the 23 s upload; parameters hold the 300 s load
+    assert load_window({"started": "2026-11-18T05:17:46.11+00:00", "ended": "2026-11-18T05:18:09.93+00:00",
+                        "parameters": {"start": "2026-11-18T05:11:12+00:00", "end": "2026-11-18T05:17:46+00:00"}}) \
+        == ("2026-11-18T05:11:12+00:00", "2026-11-18T05:18:09.93+00:00")
+    # notifications: started/ended already cover the load
+    assert load_window({"started": "2026-11-12T14:03:59+00:00", "ended": "2026-11-12T14:07:01+00:00",
+                        "parameters": {"start": "2026-11-12T14:05:46+00:00"},
+                        "results": {"end": "2026-11-12T14:06:51+00:00"}}) \
+        == ("2026-11-12T14:03:59+00:00", "2026-11-12T14:07:01+00:00")
+
+
 def test_planned():
     assert writeback.planned(run_with_status("FAIL"), "possible_baseline_false_positive") == \
         {"old": "FAIL", "new": "PASS", "changes": True}

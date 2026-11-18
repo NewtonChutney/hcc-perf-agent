@@ -69,8 +69,9 @@ A review by a user in `WRITEBACK_USERS` sets the run's `result` the way
   status-data document, and `result` on the matching `results-dashboard-data` document.
 - **Effect on baselines:** baseline queries take golden runs with `result: PASS`, so a
   review that sets PASS adds the run to later baselines, just as an RP override did.
-- **Who:** edit `WRITEBACK_USERS` in `deploy/base/deployment.yaml` (cluster user names,
-  comma-separated, or `*`). Other users' reviews are recorded but don't change results.
+- **Who:** `WRITEBACK_USERS` in `deploy/base/deployment.yaml`. It's `*` for now, so any user
+  signed in to the cluster can change results. To restrict it, list cluster user names,
+  comma-separated; reviews by anyone else are then recorded but don't change results.
 - **Undo:** submit a corrected review; the new category sets the result again and adds
   another comment.
 - **Off switch:** `WRITEBACK_ENABLED=false`.
@@ -89,9 +90,30 @@ oc --context $C -n hceperf--runtime-int create secret generic hcc-perf-agent-llm
 oc --context $C -n hceperf--runtime-int rollout restart deploy/hcc-perf-agent
 ```
 
-Pods on rdu3 can't connect to EnMaaS directly (the connection times out, probably an
-allowlist on EnMaaS). So LLM calls go through `squid.corp.redhat.com:3128` (`LLM_PROXY`),
-while ES traffic stays direct.
+Pods on rdu3 can't connect to EnMaaS or AWS directly; the connection times out. So calls to
+both go through `squid.corp.redhat.com:3128` (`EGRESS_PROXY`), while ES traffic stays direct.
+
+### AWS (RDS) evidence
+
+The `rds_metrics` chat tool reads live Performance Insights data (DB load, CPU, IOPS, top
+SQL and wait events) and CloudWatch data (connections, memory, latency) for the databases
+behind a run, over the run's load window. The databases are matched from the run's pod
+names, e.g. `kessel-inventory-api` matches `kessel-inventory-perf`.
+
+It uses the perf team's read-only Performance Insights key (IAM user
+`consoledot-perf-team-rds-pi-reader`). The key comes from `iperf-secret` in namespace `cpt`
+on rhperfcluster. To refresh it after a rotation, while logged in to both clusters:
+
+```sh
+oc --context <rhperfcluster> -n cpt get secret iperf-secret -o json | jq '{apiVersion:"v1",kind:"Secret",
+  metadata:{name:"hcc-perf-agent-aws",namespace:"hceperf--runtime-int"},
+  data:{AWS_REGION:.data.AWS_CLOUDWATCH_REGION,PI_ACCESS_KEY_ID:.data.AWS_PI_READ_ONLY_ACCESS_KEY_ID,
+        PI_SECRET_ACCESS_KEY:.data.AWS_PI_READ_ONLY_SECRET_ACCESS_KEY}}' | oc --context $C apply -f -
+oc --context $C -n hceperf--runtime-int rollout restart deploy/hcc-perf-agent
+```
+
+The `AWS_CLOUDWATCH_*` key pair in that secret is invalid (`InvalidClientTokenId`); the PI
+key also reads CloudWatch.
 
 Each question is logged with the user, the tools called, and the duration (`oc logs
 deploy/hcc-perf-agent -c app`). Answers aren't stored.

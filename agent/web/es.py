@@ -165,8 +165,8 @@ def attach_status(runs: list[Run], full: bool = False) -> None:
     latest `ended` within JOIN_WINDOW before the run's first decision."""
     if not runs:
         return
-    source = True if full else ["id", "name", "result", "golden", "started", "ended",
-                                "parameters.cluster.pods", BUILD_URL_FIELD]
+    source = True if full else ["id", "name", "result", "golden", "started", "ended", "parameters.start",
+                                "parameters.end", "results.end", "parameters.cluster.pods", BUILD_URL_FIELD]
     try:
         data = _es("POST", f"{STATUS_INDICES}/_search", {
             "size": len(runs) * 2,
@@ -208,9 +208,23 @@ def _time_join(runs: list[Run], source) -> dict[str, dict]:
     return out
 
 
+def load_window(src: dict) -> tuple[str, str] | None:
+    """When the test actually ran. `started`/`ended` cover only the upload step in some
+    services (kessel: 23 s for a 300 s test) while `parameters.start`/`end` hold the load
+    window; others are the reverse. Take the earliest start and latest end of all of them."""
+    params, results = src.get("parameters") or {}, src.get("results") or {}
+    starts = [t for t in (src.get("started"), params.get("start")) if isinstance(t, str)]
+    ends = [t for t in (src.get("ended"), params.get("end"), results.get("end")) if isinstance(t, str)]
+    try:
+        return (min(starts, key=_utc), max(ends, key=_utc)) if starts and ends else None
+    except ValueError:
+        return None
+
+
 def _status_summary(hit: dict, full: bool) -> dict:
     src = hit["_source"]
     return {
+        "window": load_window(src),
         "index": hit["_index"],
         "doc_id": hit["_id"],
         "id": src.get("id"),

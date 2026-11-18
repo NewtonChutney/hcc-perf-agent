@@ -262,7 +262,7 @@ flowchart TD
 | ES | Read all CPT indices; write `insights_perf_agent_*` and `insights_perf_triage_reviews` | 1 |
 | ES | Write status-data indices (`result`, `baseline_eligible`, `result_override`) | 2 |
 | Perf cluster ServiceAccount | `view`, `cluster-monitoring-view`, `monitoring-alertmanager-view` | 1 |
-| AWS IAM role | Read-only Performance Insights and CloudWatch | 1 |
+| AWS IAM user `consoledot-perf-team-rds-pi-reader` (existing, from rhperfcluster `cpt/iperf-secret`) | Read-only Performance Insights, `rds:DescribeDBInstances`, CloudWatch; via the corp proxy | 1 (in use by chat) |
 | GitHub | Read-only contents and commits for the service repos | 1 |
 | Jenkins API token | Read builds; trigger `CPTOverrideResult` only | 1 (read), 2 (trigger) |
 | EnMaaS API key | Inference | 1 |
