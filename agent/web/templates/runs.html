@@ -15,6 +15,11 @@
       {% for r in ["FAIL", "ERROR", "PASS", ""] %}<option value="{{ r }}" {% if r == result %}selected{% endif %}>{{ r or "all" }}</option>{% endfor %}
     </select>
   </label>
+  <label>Review
+    <select name="review">
+      {% for v, label in [("", "all"), ("pending", "pending"), ("reviewed", "reviewed")] %}<option value="{{ v }}" {% if v == review %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
   <label><input type="checkbox" name="show_pr" value="true" {% if show_pr %}checked{% endif %}> include PR runs</label>
   <button>Apply</button>
 </form>
@@ -24,13 +29,14 @@
 <p class="counts">
   {{ rows|length }} run(s):
   {% for label, n in counts.most_common() %}{{ tag(label) }} {{ n }} &nbsp; {% endfor %}
+  {% if pending %}· <a href="?days={{ days }}&job={{ job }}&result={{ result }}&review=pending{% if show_pr %}&show_pr=true{% endif %}" class="pending-link"><span class="tag pending">● review pending</span> {{ pending }}</a>{% endif %}
 </p>
 <p class="legend muted">Arrow = which way the value moved out of its band. <span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>, <span class="metric unknown">amber = direction unknown</span>. % = distance outside the band.</p>
 
 <table>
-  <thead><tr><th>Finished (UTC)</th><th>Job</th><th>Build</th><th>Test</th><th>Result</th><th>Agent label</th><th>Failing metrics</th></tr></thead>
+  <thead><tr><th>Finished (UTC)</th><th>Job</th><th>Build</th><th>Test</th><th>Result</th><th>Agent label</th><th>Failing metrics</th><th>Review</th></tr></thead>
   <tbody>
-  {% for r, a in rows %}
+  {% for r, a, rv in rows %}
     <tr>
       <td class="nowrap">{{ r.uploaded|short_time }}</td>
       <td>{{ r.job_name }}</td>
@@ -42,9 +48,18 @@
       <td class="metrics">
         {% for m in a.readings if m.decision.result == "FAIL" %}{{ metric_chip(m) }} {% endfor %}
       </td>
+      <td class="review-cell">
+        {% if rv %}
+          <b>{{ rv.reviewer|who }}</b> said
+          <span class="tag {% if rv.category == rv.predicted_category %}pass{% else %}fail{% endif %}"
+                title="{% if rv.category == rv.predicted_category %}agreed with the agent{% else %}agent said {{ rv.predicted_category }}{% endif %}{% if rv.explanation %}: {{ rv.explanation }}{% endif %}">{{ rv.category }}</span>
+        {% elif a.predicted_category %}
+          <a href="/runs/{{ r.job_name }}/{{ r.build_number }}#review" class="tag pending">● pending</a>
+        {% endif %}
+      </td>
     </tr>
   {% else %}
-    <tr><td colspan="7" class="muted">No runs match.</td></tr>
+    <tr><td colspan="8" class="muted">No runs match.</td></tr>
   {% endfor %}
   </tbody>
 </table>

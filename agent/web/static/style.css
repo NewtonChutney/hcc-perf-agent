@@ -28,6 +28,9 @@ code { font-size: 12px; }
 .tag.unclear, .tag.sev-warning { background: #fff8c5; border-color: var(--amber); color: var(--amber); }
 .tag.pr { background: #fbefff; border-color: var(--purple); color: var(--purple); }
 .tag.known-false { color: var(--muted); }
+.tag.pending { background: #fff1e5; border-color: #bc4c00; color: #bc4c00; text-decoration: none; }
+a.pending-link { text-decoration: none; }
+.review-cell { min-width: 220px; font-size: 13px; }
 /* Metric chips: the arrow shows which way the value moved; the color shows good or bad. */
 .metric { display: inline-block; margin: 0 8px 2px 0; font-size: 12px; white-space: nowrap; }
 .metric .arrow { margin-right: 3px; }
@@ -48,6 +51,7 @@ code { font-size: 12px; }
 .chat-suggestions { margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; }
 .chat-suggestions button { font-size: 12px; border: 1px solid var(--line); background: white; border-radius: 12px; }
 .chat-form { display: flex; gap: 8px; align-items: flex-end; }
+.chat-controls { display: flex; gap: 6px; align-items: center; }
 .chat-form textarea { flex: 1; font: inherit; padding: 6px; }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; }

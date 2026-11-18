@@ -6,6 +6,11 @@
   const form = root.querySelector(".chat-form");
   const input = form.querySelector("textarea");
   const send = form.querySelector("button:not([type])");
+  const modelSelect = form.querySelector(".chat-model");
+  const savedModel = localStorage.getItem("hpa-chat-model");
+  if (savedModel && [...modelSelect.options].some(o => o.value === savedModel)) modelSelect.value = savedModel;
+  modelSelect.addEventListener("change", () => localStorage.setItem("hpa-chat-model", modelSelect.value));
+  const modelLabel = id => ([...modelSelect.options].find(o => o.value === id) || {textContent: id}).textContent;
   const job = root.dataset.job, build = root.dataset.build;
   const key = "hpa-chat:" + (job ? job + "#" + build : "global");
   let messages = JSON.parse(sessionStorage.getItem(key) || "[]");
@@ -41,14 +46,15 @@
     return html;
   }
 
-  function add(role, content, tools) {
+  function add(role, content, tools, model) {
     const div = document.createElement("div");
     div.className = "msg " + role;
     div.innerHTML = role === "user" ? esc(content) : render(content);
-    if (tools && tools.length) {
+    if (model || (tools && tools.length)) {
       const t = document.createElement("div");
       t.className = "tools";
-      t.textContent = "Tools used: " + tools.map(x => x.name + "(" + (x.arguments || "") + ")" + (x.ok ? "" : " ✗")).join(", ");
+      t.textContent = (model ? modelLabel(model) + " · " : "") + "Tools used: " +
+        ((tools || []).map(x => x.name + "(" + (x.arguments || "") + ")" + (x.ok ? "" : " ✗")).join(", ") || "none");
       div.appendChild(t);
     }
     log.appendChild(div);
@@ -56,7 +62,7 @@
     return div;
   }
 
-  messages.forEach(m => add(m.role, m.content, m.tools));
+  messages.forEach(m => add(m.role, m.content, m.tools, m.model));
 
   async function ask(q) {
     q = q.trim();
@@ -70,7 +76,8 @@
       const r = await fetch("/api/chat", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({messages: messages.map(m => ({role: m.role, content: m.content})), job, build}),
+        body: JSON.stringify({messages: messages.map(m => ({role: m.role, content: m.content})), job, build,
+                              model: modelSelect.value}),
       });
       const data = await r.json().catch(() => ({error: "HTTP " + r.status}));
       pending.remove();
@@ -78,8 +85,8 @@
         messages.pop();
         add("assistant error", "Error: " + (data.error || data.detail || r.status));
       } else {
-        messages.push({role: "assistant", content: data.reply, tools: data.tools});
-        add("assistant", data.reply, data.tools);
+        messages.push({role: "assistant", content: data.reply, tools: data.tools, model: data.model});
+        add("assistant", data.reply, data.tools, data.model);
       }
     } catch (e) {
       pending.remove();

@@ -416,6 +416,18 @@ def get_review(review_id: str) -> dict | None:
     return r.json().get("_source")
 
 
+def get_reviews(review_ids: list[str]) -> dict[str, dict]:
+    """Reviews for many runs in one request, keyed by review ID; runs without one are absent."""
+    if not review_ids:
+        return {}
+    r = requests.post(f"{ES_URL}/{REVIEWS_INDEX}/_mget", json={"ids": list(dict.fromkeys(review_ids))},
+                      timeout=TIMEOUT)
+    if r.status_code == 404:  # index not created yet
+        return {}
+    r.raise_for_status()
+    return {d["_id"]: d["_source"] for d in r.json().get("docs", []) if d.get("found")}
+
+
 def save_review(review_id: str, doc: dict) -> None:
     doc = dict(doc, reviewed_at=dt.datetime.now(dt.timezone.utc).isoformat())
     _es("PUT", f"{REVIEWS_INDEX}/_doc/{quote(review_id, safe='')}?refresh=wait_for", doc)

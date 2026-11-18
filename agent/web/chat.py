@@ -23,6 +23,17 @@ from .rules import assess, better_direction
 
 LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.enmaas.devshift.net/v1").rstrip("/")
 LLM_MODEL = os.environ.get("LLM_MODEL", "rits/zai-org/glm-5-3")
+# Models people can pick in the UI (the EnMaaS models in ~/.omp/agent/models.yml).
+# LLM_MODELS overrides: "id=Label,id=Label". Requests for other models are rejected.
+MODELS: dict[str, str] = dict(
+    (item.split("=", 1) + [item])[:2] for item in os.environ.get(
+        "LLM_MODELS",
+        "rits/zai-org/glm-5-3=GLM 5.3,"
+        "rits/deepseek-ai/DeepSeek-V4.1-Flash-1017=DeepSeek V4.1 Flash,"
+        "rits/meta-models/Muse-Spark-Open-816B-A42B-NVFP4=Muse Spark",
+    ).split(",") if item.strip()
+)
+MODELS.setdefault(LLM_MODEL, LLM_MODEL)
 LLM_KEY_FILE = pathlib.Path(os.environ.get("LLM_API_KEY_FILE", "/var/run/secrets/llm/api-key"))
 LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "120"))
 # rdu3 can't reach EnMaaS directly (connections time out); the corporate proxy can.
@@ -275,6 +286,22 @@ TOOLS = {
 }
 
 
+def _round(v):
+    """Round floats to what a person reads (models echo 136.43529094999994 otherwise)."""
+    if isinstance(v, float):
+        a = abs(v)
+        if a >= 100:
+            return round(v, 1)
+        if a >= 1:
+            return round(v, 2)
+        return float(f"{v:.3g}")
+    if isinstance(v, dict):
+        return {k: _round(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_round(x) for x in v]
+    return v
+
+
 def _call_tool(name: str, raw_args: str) -> tuple[str, bool]:
     if name not in TOOLS:
         return json.dumps({"error": f"unknown tool {name}"}), False
@@ -286,7 +313,7 @@ def _call_tool(name: str, raw_args: str) -> tuple[str, bool]:
         result, ok = {"error": f"bad arguments: {exc}"}, False
     except requests.RequestException as exc:
         result, ok = {"error": f"Elasticsearch request failed: {exc}"}, False
-    text = json.dumps(result, default=str)
+    text = json.dumps(_round(result), default=str)
     if len(text) > MAX_TOOL_RESULT_CHARS:
         text = text[:MAX_TOOL_RESULT_CHARS] + '... [truncated; narrow the request, e.g. with offset/limit or contains]'
     return text, ok
@@ -298,21 +325,25 @@ class ChatUnavailable(Exception):
     pass
 
 
-def _complete(messages: list[dict]) -> dict:
+def _complete(messages: list[dict], model: str = LLM_MODEL) -> dict:
     r = requests.post(f"{LLM_BASE_URL}/chat/completions", timeout=LLM_TIMEOUT,
                       proxies={"https": LLM_PROXY, "http": LLM_PROXY} if LLM_PROXY else None,
                       headers={"Authorization": f"Bearer {_api_key()}"},
-                      json={"model": LLM_MODEL, "messages": messages, "temperature": 0.2, "max_tokens": 4000,
+                      json={"model": model, "messages": messages, "temperature": 0.2, "max_tokens": 4000,
                             "tools": [schema for _, schema in TOOLS.values()], "tool_choice": "auto"})
     if r.status_code >= 400:
         raise ChatUnavailable(f"LLM returned HTTP {r.status_code}: {r.text[:300]}")
     return r.json()["choices"][0]["message"]
 
 
-def answer(history: list[dict], user: str, job: str | None = None, build: str | None = None) -> dict:
+def answer(history: list[dict], user: str, job: str | None = None, build: str | None = None,
+           model: str | None = None) -> dict:
     """Run the tool loop for the latest user message. `history` holds only user/assistant text."""
     if not enabled():
         raise ChatUnavailable("chat is not configured (no LLM API key)")
+    model = model or LLM_MODEL
+    if model not in MODELS:
+        raise ChatUnavailable(f"model {model} is not allowed")
     system = SYSTEM_PROMPT
     if job and build:
         system += f"\nThe user is looking at {job} #{build}; 'this run' means that build.\n"
@@ -326,11 +357,11 @@ def answer(history: list[dict], user: str, job: str | None = None, build: str | 
     started = time.monotonic()
     try:
         for _ in range(MAX_TOOL_ROUNDS):
-            msg = _complete(messages)
+            msg = _complete(messages, model)
             calls = msg.get("tool_calls") or []
             if not calls:
                 reply = (msg.get("content") or "").strip() or "(no answer)"
-                return {"reply": reply, "tools": trace}
+                return {"reply": reply, "tools": trace, "model": model}
             messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
             for call in calls:
                 fn = call.get("function") or {}
@@ -338,11 +369,12 @@ def answer(history: list[dict], user: str, job: str | None = None, build: str | 
                 trace.append({"name": fn.get("name"), "arguments": fn.get("arguments"), "ok": ok})
                 messages.append({"role": "tool", "tool_call_id": call.get("id"), "content": result})
         return {"reply": f"I stopped after {MAX_TOOL_ROUNDS} rounds of tool calls without an answer. "
-                          "Try a narrower question.", "tools": trace}
+                          "Try a narrower question.", "tools": trace, "model": model}
     except requests.RequestException as exc:
         raise ChatUnavailable(f"LLM request failed: {exc}") from exc
     finally:
         _slots.release()
         question = history[-1].get("content", "")[:200] if history else ""
-        log.info(json.dumps({"event": "chat", "user": user, "job": job, "build": build, "question": question,
+        log.info(json.dumps({"event": "chat", "user": user, "model": model, "job": job, "build": build,
+                             "question": question,
                              "tools": [t["name"] for t in trace], "seconds": round(time.monotonic() - started, 1)}))

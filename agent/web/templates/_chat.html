@@ -18,8 +18,13 @@
   </div>
   <form class="chat-form">
     <textarea name="q" rows="2" placeholder="Ask a question (Enter to send, Shift+Enter for a new line)"></textarea>
-    <button>Send</button>
-    <button type="button" class="chat-reset">New chat</button>
+    <div class="chat-controls">
+      <select name="model" class="chat-model" title="EnMaaS model">
+        {% for id, label in chat_models().items() %}<option value="{{ id }}" {% if id == chat_default_model() %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <button>Send</button>
+      <button type="button" class="chat-reset">New chat</button>
+    </div>
   </form>
   <p class="muted small">Answers come from an LLM (EnMaaS) that reads CPT data through read-only tools; the tools it used are listed under each answer. Check numbers against the tables before acting on them.</p>
   <script src="/static/chat.js" defer></script>

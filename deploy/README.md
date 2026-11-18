@@ -56,8 +56,9 @@ The next `oc apply -k deploy/base` resets it to `main`.
 
 ## Chat (optional)
 
-The Chat page and the panel on each run page answer questions with an EnMaaS model
-(`LLM_MODEL`, default GLM 5.3). The model reads CPT data only through read-only tools in
+The Chat page and the panel on each run page answer questions with an EnMaaS model.
+Users pick GLM 5.3 (the default, `LLM_MODEL`), DeepSeek V4.1 Flash or Muse Spark; set
+`LLM_MODELS` (`id=Label,...`) to change the list. The server rejects any other model. The model reads CPT data only through read-only tools in
 `agent/web/chat.py`. Chat stays disabled until the key exists. Read the key from a file so
 it stays out of shell history:
 

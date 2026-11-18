@@ -36,6 +36,8 @@ templates.env.globals.update(
 templates.env.filters["num"] = fmt.num
 templates.env.filters["pct"] = fmt.pct
 templates.env.filters["short_time"] = lambda s: (s or "")[:16].replace("T", " ")
+# oauth-proxy on OpenShift reports users as <name>@cluster.local; show just the name.
+templates.env.filters["who"] = lambda s: (s or "").removesuffix("@cluster.local")
 
 
 def current_user(request: Request) -> str | None:
@@ -63,7 +65,8 @@ def readyz():
 
 
 @app.get("/", response_class=HTMLResponse)
-def runs_page(request: Request, days: int = 7, job: str = "", result: str = "FAIL", show_pr: bool = False):
+def runs_page(request: Request, days: int = 7, job: str = "", result: str = "FAIL", show_pr: bool = False,
+              review: str = ""):
     days = max(1, min(days, 60))
     error = None
     rows, jobs = [], []
@@ -71,14 +74,21 @@ def runs_page(request: Request, days: int = 7, job: str = "", result: str = "FAI
         runs = es.list_runs(days, job or None, result or None)
         if not show_pr:
             runs = [r for r in runs if not (r.status and r.status["pr"])]
-        rows = [(r, assess(r)) for r in runs]
+        reviews = es.get_reviews([r.review_id for r in runs])
+        rows = [(r, assess(r), reviews.get(r.review_id)) for r in runs]
         jobs = es.job_names()
     except requests.RequestException as exc:
         error = f"Elasticsearch request failed: {exc}"
-    counts = collections.Counter(a.label for _, a in rows)
+    # A run needs a review when the agent made a call on it (anything but PASS) and nobody has reviewed it.
+    pending = sum(1 for _, a, rv in rows if a.predicted_category and not rv)
+    if review == "pending":
+        rows = [x for x in rows if x[1].predicted_category and not x[2]]
+    elif review == "reviewed":
+        rows = [x for x in rows if x[2]]
+    counts = collections.Counter(a.label for _, a, _ in rows)
     return templates.TemplateResponse(request, "runs.html", dict(
-        rows=rows, jobs=jobs, days=days, job=job, result=result, show_pr=show_pr,
-        counts=counts, error=error, user=current_user(request)))
+        rows=rows, jobs=jobs, days=days, job=job, result=result, show_pr=show_pr, review=review,
+        pending=pending, counts=counts, error=error, user=current_user(request)))
 
 
 @app.get("/runs/{job}/{number}", response_class=HTMLResponse)
@@ -154,6 +164,9 @@ def chat_page(request: Request):
     return templates.TemplateResponse(request, "chat.html", dict(user=current_user(request)))
 
 
+templates.env.globals.update(chat_models=lambda: chat.MODELS, chat_default_model=lambda: chat.LLM_MODEL)
+
+
 @app.post("/api/chat")
 async def chat_api(request: Request):
     check_same_origin(request)
@@ -165,10 +178,13 @@ async def chat_api(request: Request):
     if not isinstance(history, list) or not history or history[-1].get("role") != "user":
         raise HTTPException(400, "messages must end with a user message")
     job, build = body.get("job") or None, body.get("build") or None
+    model = body.get("model") or None
+    if model and model not in chat.MODELS:
+        raise HTTPException(400, "unknown model")
     try:
         # The tool loop does blocking HTTP calls; keep it off the event loop.
         from starlette.concurrency import run_in_threadpool
-        result = await run_in_threadpool(chat.answer, history, user, job, build)
+        result = await run_in_threadpool(chat.answer, history, user, job, build, model)
     except chat.ChatUnavailable as exc:
         return JSONResponse({"error": str(exc)}, status_code=503)
     return result

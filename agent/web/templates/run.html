@@ -59,10 +59,10 @@
   </tbody>
 </table>
 
-<h2>Review</h2>
+<h2 id="review">Review</h2>
 {% if saved %}<p class="ok">Review saved.</p>{% endif %}
 {% if review %}
-<p>Last review by <b>{{ review.reviewer }}</b> at {{ review.reviewed_at|short_time }} UTC:
+<p>Last review by <b>{{ review.reviewer|who }}</b> at {{ review.reviewed_at|short_time }} UTC:
   <span class="tag">{{ review.category }}</span>
   {% if review.category == review.predicted_category %}(agreed with the agent){% else %}(agent said {{ review.predicted_category or "nothing" }}){% endif %}
   {% if review.explanation %}<br><q>{{ review.explanation }}</q>{% endif %}

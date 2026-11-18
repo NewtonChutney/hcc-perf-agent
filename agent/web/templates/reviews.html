@@ -21,7 +21,7 @@
     <td>{% if r.build_url %}<a href="/runs/{{ r.job_name }}/{{ r.build_url.rstrip('/').split('/')[-1] }}">{{ r.job_name }} #{{ r.build_url.rstrip('/').split('/')[-1] }}</a>{% else %}{{ r.job_name }} {{ r.run_id }}{% endif %}</td>
     <td>{{ r.predicted_category or "-" }}</td>
     <td><span class="tag {% if r.category == r.predicted_category %}pass{% else %}fail{% endif %}">{{ r.category }}</span></td>
-    <td>{{ r.reviewer }}</td>
+    <td>{{ r.reviewer|who }}</td>
     <td>{{ r.explanation or "" }}{% if r.bug_url %} <a href="{{ r.bug_url }}">bug</a>{% endif %}</td>
   </tr>
   {% endfor %}

@@ -15,7 +15,7 @@
     <a href="/reviews">Reviews</a>
     <a href="/alerts">Perf cluster alerts</a>
   </nav>
-  <span class="user">{{ user or "not signed in" }}</span>
+  <span class="user">{{ user|who if user else "not signed in" }}</span>
 </header>
 <main>
   <p class="banner">Report-only preview. Labels are rules applied to today's <code>pass_or_fail</code> decisions; nothing is changed in Jenkins or status data. Reviews are stored in <code>insights_perf_triage_reviews</code>.</p>
