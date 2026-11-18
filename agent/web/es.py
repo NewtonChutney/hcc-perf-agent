@@ -119,19 +119,31 @@ def matches_result(run: Run, wanted: str) -> bool:
     return run.current_result == wanted
 
 
-def list_runs(days: int, job: str | None = None, result: str | None = None, limit: int = 200) -> list[Run]:
+def _decision_hits(query: dict, page: int = 5000) -> list[dict]:
+    """Every decision matching `query`, newest first. Pages with search_after, since a
+    single search stops at 10,000 hits (60 days of decisions is close to that)."""
+    sort = [{"uploaded": "desc"}, {"build_url.keyword": "asc"}, {"description.keyword": "asc"}]
+    hits, after = [], None
+    while True:
+        body = {"size": page, "sort": sort, "query": query}
+        if after:
+            body["search_after"] = after
+        batch = _es("POST", f"{DECISIONS_INDEX}/_search", body)["hits"]["hits"]
+        hits += batch
+        if len(batch) < page:
+            return hits
+        after = batch[-1]["sort"]
+
+
+def list_runs(days: int, job: str | None = None, result: str | None = None,
+              limit: int | None = 200) -> list[Run]:
     """Runs with decisions uploaded in the last `days`, newest first; `result` as in
-    `matches_result`."""
+    `matches_result`. `limit=None` returns all of them."""
     filters = [{"range": {"uploaded": {"gte": f"now-{days}d"}}}]
     if job:
         filters.append({"term": {"job_name.keyword": job}})
-    data = _es("POST", f"{DECISIONS_INDEX}/_search", {
-        "size": 10000,
-        "sort": [{"uploaded": "desc"}],
-        "query": {"bool": {"filter": filters}},
-    })
     runs: dict[str, Run] = {}
-    for hit in data["hits"]["hits"]:
+    for hit in _decision_hits({"bool": {"filter": filters}}):
         src = hit["_source"]
         url = src.get("build_url")
         if not url:
@@ -181,6 +193,38 @@ def _is_pr(src: dict) -> bool:
 def _images(src: dict) -> dict[str, str]:
     pods = ((src.get("parameters") or {}).get("cluster") or {}).get("pods") or {}
     return {k: str(v.get("image")) for k, v in sorted(pods.items()) if isinstance(v, dict) and v.get("image")}
+
+
+def _image_builds(src: dict) -> dict[str, str]:
+    """When each pod's image was built (`image-created-at`, read with skopeo at run time)."""
+    pods = ((src.get("parameters") or {}).get("cluster") or {}).get("pods") or {}
+    return {k: str(v["image-created-at"]) for k, v in pods.items() if isinstance(v, dict) and v.get("image-created-at")}
+
+
+# Tags that are moved to new builds, so the same tag doesn't mean the same image.
+MOVING_TAGS = {"latest", "main", "master", "stable", "nightly", ""}
+
+
+def image_changes(now: dict, before: dict) -> tuple[list[str], list[str]]:
+    """(changed, unknown) pods between two status summaries or history points.
+
+    An image counts as changed when its reference differs, or when the build time differs
+    behind the same reference (a moving tag like `latest` was rebuilt). With a moving tag
+    and no build time on either side, whether it changed is unknown.
+    """
+    ia, ib = now.get("images") or {}, before.get("images") or {}
+    ba, bb = now.get("image_builds") or {}, before.get("image_builds") or {}
+    changed, unknown = [], []
+    for pod in sorted(set(ia) | set(ib)):
+        a, b = ia.get(pod), ib.get(pod)
+        if a != b:
+            changed.append(pod)
+        elif ba.get(pod) and bb.get(pod):
+            if ba[pod] != bb[pod]:
+                changed.append(f"{pod} (rebuilt behind the same tag)")
+        elif a.strip('"').rpartition(":")[2] in MOVING_TAGS or ":" not in a.rpartition("/")[2]:
+            unknown.append(pod)
+    return changed, unknown
 
 
 def _utc(ts: str) -> dt.datetime:
@@ -268,6 +312,7 @@ def _status_summary(hit: dict, full: bool) -> dict:
         "started": src.get("started"),
         "ended": src.get("ended"),
         "images": _images(src),
+        "image_builds": _image_builds(src),
         "test": ((src.get("parameters") or {}).get("test")) if full else None,
         "comments": src.get("comments") if full else None,
     }
@@ -405,7 +450,7 @@ def comparable_history(run: Run, metrics: list[str], size: int = 40,
                 value = dec.get("value") if dec else None
             points.append({
                 "ended": d["ended"], "value": value, "pr": _is_pr(d), "run_result": d.get("result"),
-                "images": _images(d),
+                "images": _images(d), "image_builds": _image_builds(d),
                 "lower_boundary": dec.get("lower_boundary") if dec else None,
                 "upper_boundary": dec.get("upper_boundary") if dec else None,
                 "result": dec.get("result") if dec else None,  # None: metric not gated in that run

@@ -1,0 +1,19 @@
+{# What the review categories mean. Shown under the review form and on the Reviews page.
+   Definitions: rules.CATEGORY_HELP; results: writeback.RESULT_FOR_CATEGORY. #}
+<table class="categories small">
+  <thead><tr><th>Category</th><th>Means</th><th>Use it when</th><th>Result after saving</th>
+    <th>Agent labels that predict it</th><th>ReportPortal</th></tr></thead>
+  <tbody>
+  {% for c, (means, when, rp) in category_help.items() %}
+  <tr>
+    <td><span class="tag">{{ c }}</span></td>
+    <td>{{ means }}</td>
+    <td>{{ when }}</td>
+    <td class="nowrap"><b>{{ result_for[c] }}</b><br>
+      <span class="muted">{% if result_for[c] == "PASS" %}enters the baseline{% else %}kept out of the baseline{% endif %}</span></td>
+    <td>{% for l, lc in label_category.items() if lc == c %}{{ l }}{% if not loop.last %}, {% endif %}{% else %}<span class="muted">none: a person decides</span>{% endfor %}</td>
+    <td class="muted">{{ rp }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>

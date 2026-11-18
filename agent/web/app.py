@@ -21,7 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import alerts, chat, es, fmt, writeback
 from .charts import sparkline
-from .rules import CATEGORIES, LABELS, evaluate, evaluate_many
+from .rules import CATEGORIES, CATEGORY_HELP, LABEL_CATEGORY, LABELS, evaluate, evaluate_many
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 HERE = pathlib.Path(__file__).parent
@@ -32,6 +32,9 @@ templates.env.globals.update(
     kibana_url=os.environ.get("KIBANA_URL", ""),
     alerts_enabled=alerts.enabled,
     chat_enabled=chat.enabled,
+    category_help=CATEGORY_HELP,
+    label_category=LABEL_CATEGORY,
+    result_for=writeback.RESULT_FOR_CATEGORY,
 )
 templates.env.filters["num"] = fmt.num
 templates.env.filters["pct"] = fmt.pct
@@ -64,29 +67,58 @@ def readyz():
     return JSONResponse({"elasticsearch": ok}, status_code=200 if ok else 503)
 
 
+MAX_ROWS = 200  # rows the runs page shows, newest first, after every filter
+
+
+def _filtered_runs(days: int, job: str, result: str, show_pr: bool, review: str, label: str):
+    """(rows, matched): the newest MAX_ROWS runs that pass every filter, as (run,
+    assessment, review), and how many matched in all.
+
+    Labels need history queries, so cheap filters go first. When no filter depends on the
+    label (Agent label, Review = pending), the cap is applied before labelling: same rows,
+    far fewer queries.
+    """
+    runs = es.list_runs(days, job or None, result or None, limit=None)
+    if not show_pr:
+        runs = [r for r in runs if not (r.status and r.status["pr"])]
+    reviews = es.get_reviews([r.review_id for r in runs])
+    if review == "reviewed":
+        runs = [r for r in runs if r.review_id in reviews]
+    elif review == "pending":  # pending needs a label other than PASS, so a failed run
+        runs = [r for r in runs if r.review_id not in reviews and r.result != "PASS"]
+    # The label follows pass_or_fail's result: PASS and ERROR only for those runs, the rest for FAIL.
+    if label in ("PASS", "ERROR"):
+        runs = [r for r in runs if r.result == label]
+    elif label:
+        runs = [r for r in runs if r.result == "FAIL"]
+    needs_label = bool(label) or review == "pending"
+    if not needs_label:
+        matched = len(runs)
+        runs = runs[:MAX_ROWS]
+    rows = [(r, a, reviews.get(r.review_id)) for r, a in zip(runs, evaluate_many(runs))]
+    if review == "pending":
+        rows = [x for x in rows if x[1].predicted_category]
+    if label:
+        rows = [x for x in rows if x[1].label == label]
+    if needs_label:
+        matched = len(rows)
+        rows = rows[:MAX_ROWS]
+    return rows, matched
+
+
 @app.get("/", response_class=HTMLResponse)
 def runs_page(request: Request, days: int = 7, job: str = "", result: str = "", show_pr: bool = False,
               review: str = "", label: str = ""):
     days = max(1, min(days, 60))
     error = None
-    rows, jobs = [], []
+    rows, jobs, matched = [], [], 0
     try:
-        runs = es.list_runs(days, job or None, result or None)
-        if not show_pr:
-            runs = [r for r in runs if not (r.status and r.status["pr"])]
-        reviews = es.get_reviews([r.review_id for r in runs])
-        rows = [(r, a, reviews.get(r.review_id)) for r, a in zip(runs, evaluate_many(runs))]
+        rows, matched = _filtered_runs(days, job, result, show_pr, review, label)
         jobs = es.job_names()
     except requests.RequestException as exc:
         error = f"Elasticsearch request failed: {exc}"
     # A run needs a review when the agent made a call on it (anything but PASS) and nobody has reviewed it.
     pending = sum(1 for _, a, rv in rows if a.predicted_category and not rv)
-    if review == "pending":
-        rows = [x for x in rows if x[1].predicted_category and not x[2]]
-    elif review == "reviewed":
-        rows = [x for x in rows if x[2]]
-    if label:
-        rows = [x for x in rows if x[1].label == label]
     counts = collections.Counter(a.label for _, a, _ in rows)
     user = current_user(request)
     here = request.url.path + (f"?{request.url.query}" if request.url.query else "")
@@ -94,7 +126,8 @@ def runs_page(request: Request, days: int = 7, job: str = "", result: str = "", 
     # URL stays the same as the full page's, so responses must not be cached interchangeably.
     partial = request.headers.get("x-partial") == "1"
     response = templates.TemplateResponse(request, "_runs_results.html" if partial else "runs.html", dict(
-        rows=rows, jobs=jobs, days=days, job=job, result=result, show_pr=show_pr, review=review,
+        rows=rows, matched=matched, max_rows=MAX_ROWS, jobs=jobs, days=days, job=job, result=result,
+        show_pr=show_pr, review=review,
         label=label, labels=LABELS, pending=pending, counts=counts, error=error, user=user, here=here,
         can_write=writeback.allowed(user), result_for=writeback.RESULT_FOR_CATEGORY))
     response.headers["Vary"] = "X-Partial"

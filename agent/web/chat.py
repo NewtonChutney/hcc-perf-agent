@@ -261,11 +261,17 @@ def tool_compare_runs(job: str, build_b, build_a=None) -> dict:
         x, y = va.get(m), vb.get(m)
         change = round(100 * (y - x) / abs(x), 2) if isinstance(x, (int, float)) and isinstance(y, (int, float)) and x else None
         rows.append({"metric": m, "a": x, "b": y, "change_pct": change, "better": better_direction(m)})
-    ia, ib = (a.status or {}).get("images") or {}, (b.status or {}).get("images") or {}
-    images = {k: {"a": ia.get(k), "b": ib.get(k)} for k in sorted(set(ia) | set(ib)) if ia.get(k) != ib.get(k)}
+    sa, sb = a.status or {}, b.status or {}
+    changed, unknown = es.image_changes(sb, sa)
+    images = {}
+    for entry in changed:
+        k = entry.split(" ")[0]
+        images[k] = {"a": (sa.get("images") or {}).get(k), "b": (sb.get("images") or {}).get(k),
+                     "built_a": (sa.get("image_builds") or {}).get(k), "built_b": (sb.get("image_builds") or {}).get(k)}
     return {"job": job, "a": a.build_number, "b": b.build_number,
             "same_test": test_a == test_b if test_a and test_b else "unknown",
-            "test_a": test_a, "test_b": test_b, "metrics": rows, "changed_images": images}
+            "test_a": test_a, "test_b": test_b, "metrics": rows, "changed_images": images,
+            "images_unknown": unknown}
 
 
 def tool_list_rds_instances() -> dict:

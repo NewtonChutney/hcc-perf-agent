@@ -4,7 +4,7 @@
 {% if error %}<p class="error">{{ error }}</p>{% endif %}
 
 <p class="counts">
-  {{ rows|length }} run(s):
+  {% if matched > rows|length %}Newest {{ rows|length }} of {{ matched }} matching runs (narrow the filters to see older ones){% else %}{{ rows|length }} run(s){% endif %}:
   {% for label, n in counts.most_common() %}{{ tag(label) }} {{ n }} &nbsp; {% endfor %}
   {% if pending %}· <a href="?days={{ days }}&job={{ job }}&result={{ result }}&label={{ label }}&review=pending{% if show_pr %}&show_pr=true{% endif %}" class="pending-link"><span class="tag pending">● review pending</span> {{ pending }}</a>{% endif %}
 </p>

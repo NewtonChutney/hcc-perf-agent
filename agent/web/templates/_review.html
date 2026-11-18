@@ -29,7 +29,6 @@
       Saving a review also sets this run's <b>result</b> in status data and the results dashboard, like a ReportPortal override
       (current result: <b>{{ run.status.result }}</b>).
       {% if agree_plan and agree_plan.changes %}Agree sets it to <b>{{ agree_plan.new }}</b>{% if agree_plan.new == "PASS" %}, so it enters the baseline for later runs{% endif %}.{% elif agree_plan %}Agree keeps it {{ agree_plan.old }}.{% endif %}
-      <br><span class="muted">Category → result: {% for c, r in result_for.items() %}{{ c }} → {{ r }}{% if not loop.last %}, {% endif %}{% endfor %}.</span>
     {% else %}
       <span class="muted">Your review is recorded, but it won't change the run's result: only listed users can (WRITEBACK_USERS).</span>
     {% endif %}
@@ -49,6 +48,10 @@
     <button name="verdict" value="disagree" class="disagree">Save correction</button>
   </details>
 </form>
+<details class="category-help">
+  <summary>What the categories mean</summary>
+  {% include "_categories.html" %}
+</details>
 {% else %}
 <p class="muted">Nothing to review: the run passed.</p>
 {% endif %}

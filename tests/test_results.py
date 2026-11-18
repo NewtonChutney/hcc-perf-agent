@@ -26,6 +26,21 @@ def test_pipeline_storing_ERROR_as_FAIL_is_not_an_override():
     assert matches_result(r, "ERROR") and not matches_result(r, "FAIL")
 
 
+def test_image_changes_see_rebuilds_behind_moving_tags():
+    from agent.web.es import image_changes
+    spicedb = '"quay.io/x/spicedb:latest"'  # status data stores this one with quotes
+    before = {"images": {"api": "quay.io/x/api:534e583", "spicedb": spicedb},
+              "image_builds": {"api": "2026-11-12T17:34", "spicedb": "2026-11-10T13:25"}}
+    same = {"images": dict(before["images"]), "image_builds": dict(before["image_builds"])}
+    assert image_changes(same, before) == ([], [])
+    rebuilt = {"images": dict(before["images"]), "image_builds": {**before["image_builds"], "spicedb": "2026-11-19T09:00"}}
+    assert image_changes(rebuilt, before) == (["spicedb (rebuilt behind the same tag)"], [])
+    new_tag = {"images": {**before["images"], "api": "quay.io/x/api:aaaaaaa"}, "image_builds": before["image_builds"]}
+    assert image_changes(new_tag, before)[0] == ["api"]
+    no_builds = {"images": before["images"]}
+    assert image_changes(no_builds, {"images": before["images"]}) == ([], ["spicedb"])
+
+
 def test_without_status_data_pass_or_fail_decides():
     r = run("FAIL")
     assert (r.current_result, r.overridden) == ("FAIL", False)

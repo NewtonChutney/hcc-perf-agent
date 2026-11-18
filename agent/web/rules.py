@@ -22,8 +22,9 @@ than the test's own run-to-run noise. The agent re-reads each failing decision:
    occasional slow mode (Kessel CheckForUpdateBulk: whole runs ~18% slower, then back to
    normal with the same images) that a robust band rightly treats as outside normal
    noise but that is not a code change. OUTLIER predicts environment_failure, so the run
-   is kept out of the baseline instead of passed into it. Images are compared by tag, so
-   a change behind a moving tag such as `latest` is not seen.
+   is kept out of the baseline instead of passed into it. Images are compared by reference
+   and build time (es.image_changes), so a rebuilt `latest` counts as a change; a moving
+   tag without a recorded build time means "unknown", which also rules out OUTLIER.
 
 The UI shows all of this so a reviewer can see why a run was labelled.
 """
@@ -33,7 +34,7 @@ from __future__ import annotations
 import os
 import re
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .es import Decision, Run
 
@@ -64,8 +65,46 @@ CATEGORIES = (
 )
 
 
-# Labels assess() can return, in the order the UI lists them.
+# What each category means, for reviewers: (meaning, use it when, ReportPortal defect type).
+# The result a review sets is writeback.RESULT_FOR_CATEGORY.
+CATEGORY_HELP = {
+    "possible_baseline_false_positive": (
+        "The service is fine; the check was wrong. Its band is stale or tighter than the test's "
+        "normal run-to-run noise.",
+        "Every failing metric got better, or the worse moves are within normal noise.",
+        "no_defect"),
+    "environment_failure": (
+        "The run is invalid: something other than the code under test broke or skewed it, so it "
+        "says nothing about the service.",
+        "Cluster, node, database or network trouble; a rollout or restarts during the run; a "
+        "recurring one-off slow run; a check errored because the run is missing data.",
+        "system_issue"),
+    "true_failure": (
+        "A real regression, caused by the code or configuration under test.",
+        "You confirmed the slowdown (or other worse move) and its cause, e.g. an image change.",
+        "product_bug"),
+    "known_issue": (
+        "A real problem that is already tracked.",
+        "The failure matches an open bug; give its URL. Later runs failing the same metrics can be "
+        "matched to it.",
+        "product_bug, with a bug link"),
+    "requires_investigation": (
+        "Not known yet; someone needs to look.",
+        "Worse beyond normal noise with no explanation yet, or the direction is unclear.",
+        "to_investigate"),
+}
+
+# Labels assess() can return, in the order the UI lists them, and the category each predicts.
 LABELS = ("REGRESSION", "OUTLIER", "NOISE", "IMPROVED", "UNCLEAR", "ERROR", "PASS")
+LABEL_CATEGORY = {
+    "REGRESSION": "requires_investigation",
+    "OUTLIER": "environment_failure",
+    "NOISE": "possible_baseline_false_positive",
+    "IMPROVED": "possible_baseline_false_positive",
+    "UNCLEAR": "requires_investigation",
+    "ERROR": "environment_failure",
+    "PASS": None,
+}
 
 
 @dataclass
@@ -171,9 +210,12 @@ def read_decision(d: Decision) -> MetricReading:
 @dataclass
 class Assessment:
     label: str              # one of LABELS
-    predicted_category: str | None
     summary: str
     readings: list[MetricReading]
+
+    @property
+    def predicted_category(self) -> str | None:
+        return LABEL_CATEGORY[self.label]
 
 
 @dataclass
@@ -183,6 +225,7 @@ class Recurrence:
     image_changes: list[str] | None    # pods whose image differs from that run; None = unknown
     seen: dict[str, tuple[int, str | None]]  # metric -> (earlier one-offs at least as bad, latest build)
     sustained: list[str]               # metrics where the previous run was beyond the band too
+    image_unknown: list[str] = field(default_factory=list)  # moving tag, no build time: can't tell
 
 
 # Metrics that never make a run an OUTLIER (rule 3).
@@ -227,11 +270,10 @@ def recurrence(run: Run, readings: list[MetricReading]) -> Recurrence | None:
             sustained.append(r.decision.metric)
         one_offs = [p for p, nxt in zip(normal, normal[1:]) if as_bad(num(p)) and in_band(num(nxt))]
         seen[r.decision.metric] = (len(one_offs), _build(one_offs[-1].get("build_url")) if one_offs else None)
-    changes = None
+    changes, unknown = None, []
     if previous and previous.get("images") and run.status.get("images"):
-        now, before = run.status["images"], previous["images"]
-        changes = sorted(k for k in set(now) | set(before) if now.get(k) != before.get(k))
-    return Recurrence(_build(previous.get("build_url")) if previous else None, changes, seen, sustained)
+        changes, unknown = es.image_changes(run.status, previous)
+    return Recurrence(_build(previous.get("build_url")) if previous else None, changes, seen, sustained, unknown)
 
 
 def evaluate(run: Run, all_metrics: bool = False) -> Assessment:
@@ -275,10 +317,9 @@ def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
                 r.seen, r.seen_last = rec.seen[r.decision.metric]
     failed = [r for r in readings if r.decision.result == "FAIL"]
     if run.result == "ERROR":
-        return Assessment("ERROR", "environment_failure",
-                          "pass_or_fail errored; check the Jenkins console.", readings)
+        return Assessment("ERROR", "pass_or_fail errored; check the Jenkins console.", readings)
     if not failed:
-        return Assessment("PASS", None, "All gated metrics are inside their bands.", readings)
+        return Assessment("PASS", "All gated metrics are inside their bands.", readings)
     worse = [r for r in failed if r.verdict == "worse"]
     better = [r for r in failed if r.verdict == "better"]
     unknown = [r for r in failed if r.verdict == "unknown"]
@@ -292,17 +333,20 @@ def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
                      + (f", {len(better)} improved" if better else ""))
             prev = f"#{rec.previous_build}" if rec and rec.previous_build else "the previous run"
             failures = [r.short_name for r in beyond if _NOT_OUTLIER.search(r.decision.metric)]
-            if (rec and rec.image_changes == [] and not rec.sustained and not failures
+            if (rec and rec.image_changes == [] and not rec.image_unknown and not rec.sustained and not failures
                     and all(r.seen is not None and r.seen >= OUTLIER_MIN_SEEN for r in beyond)):
                 seen = ", ".join(f"{r.short_name} {r.seen} runs" + (f" (latest #{r.seen_last})" if r.seen_last else "")
                                  for r in beyond)
-                return Assessment("OUTLIER", "environment_failure",
+                return Assessment("OUTLIER",
                                   f"{moved}, but nothing changed and it has happened before: same images as {prev}, "
                                   f"which was normal, and one-off runs of this test at least this bad (next run back "
                                   f"to normal) in the last {OUTLIER_DAYS} days: {seen}. Looks like a recurring one-off "
                                   "run, not a code change; keep it out of the baseline.", readings)
             if rec and rec.image_changes:
                 why = f" Images changed since {prev}: {', '.join(rec.image_changes)}."
+            elif rec and rec.image_changes == [] and rec.image_unknown:
+                why = (f" No image tag changed since {prev}, but {', '.join(rec.image_unknown)} use a moving tag with "
+                       "no build time recorded, so whether the code changed is unknown.")
             elif rec and rec.image_changes == [] and failures:
                 why = f" Same images as {prev}, but failures rose ({', '.join(failures)}), which is never treated as a one-off."
             elif rec and rec.image_changes == [] and rec.sustained:
@@ -314,15 +358,14 @@ def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
                        f"the last {OUTLIER_DAYS} days ({seen}).")
             else:
                 why = ""
-            return Assessment("REGRESSION", "requires_investigation", moved + "." + why, readings)
-        return Assessment("NOISE", "possible_baseline_false_positive",
+            return Assessment("REGRESSION", moved + "." + why, readings)
+        return Assessment("NOISE",
                           f"{len(worse)} metric(s) moved in the worse direction, but each is within its normal "
                           f"run-to-run range (median ± max({NOISE_FLOOR_PCT:g}%, {NOISE_K:g}× robust sigma) over "
                           f"comparable runs of the last {NOISE_DAYS} days). The min/max band is tighter than "
                           "the test's own noise.", readings)
     if better and not unknown:
-        return Assessment("IMPROVED", "possible_baseline_false_positive",
+        return Assessment("IMPROVED",
                           f"All {len(better)} failing metric(s) moved in the better direction. "
                           "Today's two-sided check fails these; the baseline may be stale.", readings)
-    return Assessment("UNCLEAR", "requires_investigation",
-                      "Direction unknown for some failing metrics; needs a human look.", readings)
+    return Assessment("UNCLEAR", "Direction unknown for some failing metrics; needs a human look.", readings)
