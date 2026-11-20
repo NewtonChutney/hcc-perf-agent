@@ -67,7 +67,8 @@ A review by a user in `WRITEBACK_USERS` sets the run's `result` the way
 | `new_issue`, `known_issue`, `requires_investigation` | FAIL | `product_bug`, `to_investigate` |
 
 Reviews saved before the renames (`possible_baseline_false_positive`, `true_failure`) are
-read as `false_positive` and `new_issue`; the stored documents are unchanged.
+read as `false_positive` and `new_issue`. The reviews index and the status-data `comments`
+were also rewritten once, so the stored text uses the current names.
 
 - **What it writes:** `result` plus a `comments` entry (author, date, reason) on the
   status-data document, and `result` on the matching `results-dashboard-data` document.
