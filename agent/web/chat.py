@@ -87,6 +87,9 @@ sigma)). A worse move inside the normal range is noise, not a regression (label 
 A move beyond it is an OUTLIER (a recurring one-off, kept out of the baseline) when the
 images match the previous normal run, that run was normal, and earlier one-off runs in the
 last 90 days were at least as bad (`seen_before`); otherwise it is a REGRESSION.
+A run with no decisions was not checked at all: NO_BASELINE when no earlier golden PASS run
+of the same test exists (pass_or_fail had no history, so every run of that test fails until
+one is passed), UNCHECKED otherwise. Its values are in list_run_metrics and metric_history.
 
 Rules:
 - Use tools to answer; call several if needed. Never invent or estimate numbers: every
@@ -109,7 +112,7 @@ Rules:
 
 def _run_or_error(job: str, build) -> tuple[es.Run | None, dict | None]:
     run = es.get_run(job, str(build))
-    return (run, None) if run else (None, {"error": f"no decisions found for {job} #{build}"})
+    return (run, None) if run else (None, {"error": f"no decisions or status data found for {job} #{build}"})
 
 
 def _reading(r) -> dict:

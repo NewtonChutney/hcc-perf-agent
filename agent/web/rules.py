@@ -26,6 +26,13 @@ than the test's own run-to-run noise. The agent re-reads each failing decision:
    and build time (es.image_changes), so a rebuilt `latest` counts as a change; a moving
    tag without a recorded build time means "unknown", which also rules out OUTLIER.
 
+Runs pass_or_fail left no decisions for (es.unchecked_runs) have nothing to re-read. They
+are NO_BASELINE when no earlier golden PASS run of the same test exists: pass_or_fail had
+no history ("No data available in historical results!") and exits before uploading, and
+since only PASS runs become history, every run of that test fails this way until a
+review passes one. Otherwise they are UNCHECKED: pass_or_fail failed, or its per-job
+history query differs from test_identity.
+
 The UI shows all of this so a reviewer can see why a run was labelled.
 """
 
@@ -73,7 +80,8 @@ CATEGORY_HELP = {
     "false_positive": (
         "The service is fine; the check was wrong. Its band is stale or tighter than the test's "
         "normal run-to-run noise.",
-        "Every failing metric got better, or the worse moves are within normal noise.",
+        "Every failing metric got better, or the worse moves are within normal noise. Also for a "
+        "NO_BASELINE run whose numbers look right: passing it starts the test's baseline.",
         "no_defect"),
     "new_issue": (
         "A real regression, caused by the code or configuration under test, and not tracked yet.",
@@ -105,13 +113,16 @@ CATEGORY_HELP = {
 }
 
 # Labels assess() can return, in the order the UI lists them, and the category each predicts.
-LABELS = ("REGRESSION", "OUTLIER", "NOISE", "IMPROVED", "UNCLEAR", "ERROR", "PASS")
+LABELS = ("REGRESSION", "OUTLIER", "NOISE", "IMPROVED", "UNCLEAR", "NO_BASELINE", "UNCHECKED", "ERROR", "PASS")
 LABEL_CATEGORY = {
     "REGRESSION": "requires_investigation",
     "OUTLIER": "environment_failure",
     "NOISE": "false_positive",
     "IMPROVED": "false_positive",
     "UNCLEAR": "requires_investigation",
+    # Nothing was checked, so whether the numbers are a sound first baseline is for a person.
+    "NO_BASELINE": "requires_investigation",
+    "UNCHECKED": "requires_investigation",
     # A check errored: the test missed data (automation_bug) or the environment broke
     # (environment_failure). The rules can't tell which, so a person decides.
     "ERROR": "requires_investigation",
@@ -317,6 +328,8 @@ def evaluate(run: Run, all_metrics: bool = False) -> Assessment:
     (enough for the label), or for every metric when `all_metrics` (run page)."""
     from . import es
 
+    if not run.decisions:
+        return assess(run, has_baseline=es.has_baseline(run))
     readings = [read_decision(d) for d in run.decisions]
     worse = [r.decision.metric for r in readings if all_metrics or r.verdict == "worse"]
     bands: dict[str, NoiseBand | None] = {}
@@ -356,10 +369,13 @@ def _evaluate_or_fallback(run: Run) -> Assessment:
 
 
 def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
-           rec: Recurrence | None = None) -> Assessment:
+           rec: Recurrence | None = None, has_baseline: bool | None = None) -> Assessment:
     """Label a run. Without `bands` (no history fetched), worse moves count as regressions;
     without `rec`, moves beyond noise do. Passed metrics are checked against their noise band
-    only when `bands` covers them (the run page asks for every metric; lists don't)."""
+    only when `bands` covers them (the run page asks for every metric; lists don't).
+    `has_baseline` (es.has_baseline) only matters for a run without decisions."""
+    if not run.decisions:
+        return _unchecked(has_baseline)
     readings = [read_decision(d) for d in run.decisions]
     if bands is not None:
         readings = _judged(readings, bands)
@@ -401,6 +417,24 @@ def assess(run: Run, bands: dict[str, NoiseBand | None] | None = None,
                           f"All {len(better)} failing metric(s) moved in the better direction. "
                           "Today's two-sided check fails these; the baseline may be stale.", readings)
     return Assessment("UNCLEAR", "Direction unknown for some failing metrics; needs a human look.", readings)
+
+
+def _unchecked(has_baseline: bool | None) -> Assessment:
+    """NO_BASELINE or UNCHECKED for a run pass_or_fail left no decisions for."""
+    if has_baseline is False:
+        return Assessment("NO_BASELINE",
+                          "pass_or_fail didn't check this run: no earlier golden PASS run of this test (same name "
+                          "and scenario, transport, duration, clients) exists, so it had nothing to compare with "
+                          "(\"No data available in historical results!\") and the pipeline marked the run FAIL. "
+                          "Every later run of this test fails the same way until one is PASS. If this run's "
+                          "numbers look right, review it as false_positive (result PASS) to start the baseline. "
+                          "One PASS run makes a zero-width min/max band, so the next few runs will likely fail "
+                          "until a few more are passed.", [])
+    why = ("although earlier golden PASS runs of this test exist: pass_or_fail failed before uploading, or "
+           "this job's history query filters on parameters the agent doesn't compare" if has_baseline else
+           "and whether an earlier golden PASS run of this test exists couldn't be checked")
+    return Assessment("UNCHECKED", f"pass_or_fail left no decisions for this run, {why}. No metric was checked; "
+                      "see the Jenkins console.", [])
 
 
 def _beyond_noise(beyond: list[MetricReading], rec: Recurrence | None, readings: list[MetricReading],

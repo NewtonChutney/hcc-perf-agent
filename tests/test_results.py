@@ -41,6 +41,28 @@ def test_image_changes_see_rebuilds_behind_moving_tags():
     assert image_changes(no_builds, {"images": before["images"]}) == ([], ["spicedb"])
 
 
+def test_baseline_needs_a_pass_run_that_pass_or_fail_checked(monkeypatch):
+    from agent.web import es
+    # InsightsKesselK6_runnerAPI #4730 after a review passed #4726 (no decisions) to start the
+    # baseline: #4726 wasn't history when #4730 ran, so #4730 stays NO_BASELINE.
+    r = Run("https://j/job/K/4730/", "K", "4730", "2026-11-23T08:01:51")
+    r.status = {"index": "i", "ended": "2026-11-23T08:01:51+00:00", "identity": {"name": "t"}}
+    seeded = {"_source": {"results": {"jenkins": {"build_url": "https://j/job/K/4726/"}}}}
+    decisions = {"https://j/job/K/4726/": 0}
+
+    def fake_es(method, path, body=None, ndjson=None):
+        if path.endswith("/_count"):
+            return {"count": sum(decisions.get(u, 0) for u in body["query"]["terms"]["build_url.keyword"])}
+        return {"hits": {"hits": [seeded]}}
+
+    monkeypatch.setattr(es, "_es", fake_es)
+    assert es.has_baseline(r) is False
+    decisions["https://j/job/K/4726/"] = 7  # pass_or_fail checked it: real history
+    assert es.has_baseline(r) is True
+    r.status = None
+    assert es.has_baseline(r) is None
+
+
 def test_without_status_data_pass_or_fail_decides():
     r = run("FAIL")
     assert (r.current_result, r.overridden) == ("FAIL", False)

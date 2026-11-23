@@ -41,6 +41,26 @@
 </section>
 
 <h2>Metrics</h2>
+{% if not run.decisions %}
+{# A run pass_or_fail didn't check (NO_BASELINE / UNCHECKED): values only, nothing to compare. #}
+<p class="small"><code>pass_or_fail</code> checked nothing in this run. Metrics it checks in other runs of this job, with this run's value{% if test %} and earlier runs of the same test ({% for k, v in test.items() %}{{ k.split('.')[-1] }}={{ v }}{% if not loop.last %}, {% endif %}{% endfor %}){% endif %}:</p>
+{% if unchecked_values %}
+<table>
+  <thead><tr><th>Metric</th><th class="num">Value</th><th class="num">Earlier runs</th><th class="nowrap">Better is</th><th>History</th></tr></thead>
+  <tbody>
+  {% for m, (value, earlier) in unchecked_values.items() %}
+    <tr>
+      <td><code>{{ m }}</code></td>
+      <td class="num">{{ value|num }}</td>
+      <td class="num">{{ earlier }}</td>
+      <td class="nowrap">{% if better_direction(m) == "higher" %}↑ higher{% elif better_direction(m) == "lower" %}↓ lower{% else %}<span class="muted">?</span>{% endif %}</td>
+      <td>{{ charts.get(m, "") }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">This job has no checked metrics in the last year, or this run recorded none of them.</p>{% endif %}
+{% else %}
 <dl class="key small">
   <dt>Band</dt><dd>Limits <code>pass_or_fail</code> used for this run.</dd>
   <dt>Outside band</dt><dd>Arrow = which way the value moved (<span class="metric better">green = better</span>, <span class="metric worse">red = worse</span>); % = distance past the band edge.</dd>
@@ -87,6 +107,7 @@
   </tbody>
 </table>
 </div>
+{% endif %}
 
 <h2 id="review">Review</h2>
 <div id="review-section" aria-live="polite">

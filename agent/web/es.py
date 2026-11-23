@@ -15,6 +15,7 @@ import datetime as dt
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
@@ -57,7 +58,11 @@ class Run:
 
     @property
     def result(self) -> str:
+        """What pass_or_fail said. A run without decisions (see unchecked_runs) is FAIL:
+        pass_or_fail exited before uploading any, and the pipeline records that as FAIL."""
         results = {d.result for d in self.decisions}
+        if not results:
+            return "FAIL"
         return "ERROR" if "ERROR" in results else "FAIL" if "FAIL" in results else "PASS"
 
     @property
@@ -144,13 +149,16 @@ def _decision_hits(query: dict, page: int = 5000) -> list[dict]:
 
 def list_runs(days: int, job: str | None = None, result: str | None = None,
               limit: int | None = 200) -> list[Run]:
-    """Runs with decisions uploaded in the last `days`, newest first; `result` as in
-    `matches_result`. `limit=None` returns all of them."""
+    """Runs of the last `days`, newest first: those with decisions, plus unchecked_runs.
+    `result` as in `matches_result`. `limit=None` returns all of them."""
     filters = [{"range": {"uploaded": {"gte": f"now-{days}d"}}}]
     if job:
         filters.append({"term": {"job_name.keyword": job}})
+    with ThreadPoolExecutor(max_workers=1) as pool:  # independent queries; ~0.5 s each through the proxy
+        status_only = pool.submit(unchecked_runs, days, job)
+        hits = _decision_hits({"bool": {"filter": filters}})
     runs: dict[str, Run] = {}
-    for hit in _decision_hits({"bool": {"filter": filters}}):
+    for hit in hits:
         src = hit["_source"]
         url = src.get("build_url")
         if not url:
@@ -161,17 +169,48 @@ def list_runs(days: int, job: str | None = None, result: str | None = None,
         run = runs[url]
         run.decisions.append(_decision(src))
         run.uploaded = min(run.uploaded, src.get("uploaded", run.uploaded))
-    out = list(runs.values())
+    unchecked = [r for r in status_only.result() if r.build_url not in runs]
+    out = sorted([*runs.values(), *unchecked], key=lambda r: _utc(r.uploaded), reverse=True)
     if not result:
         out = out[:limit]
-        attach_status(out)
+        attach_status([r for r in out if r.status is None])
         return out
     # The current result lives in status data, so status is needed before filtering.
     said, _, now = result.partition("-")
     if now:  # only runs pass_or_fail said SAID about can have been changed from it
         out = [r for r in out if r.result == said]
-    attach_status(out)
+    attach_status([r for r in out if r.status is None])
     return [r for r in out if matches_result(r, result)][:limit]
+
+
+def unchecked_runs(days: int, job: str | None) -> list[Run]:
+    """Runs of the last `days` from status data alone; list_runs keeps those without
+    decisions. pass_or_fail exits before uploading decisions when it finds no history to
+    compare with (a new test or parameter set) or when it fails, and runs are otherwise
+    found through their decisions, so these would be invisible. Skipped: documents without
+    a build URL (nothing to name the run by) and ones that ended under JOIN_WINDOW ago,
+    whose decisions may still be on the way."""
+    filters = [{"range": {"ended": {"gte": f"now-{days}d", "lt": f"now-{JOIN_WINDOW}"}}},
+               {"exists": {"field": f"{BUILD_URL_FIELD}.keyword"}}]
+    if job:
+        filters.append({"wildcard": {f"{BUILD_URL_FIELD}.keyword": f"*/{job}/*"}})
+    data = _es("POST", f"{STATUS_INDICES}/_search", {
+        "size": 10000, "_source": _SUMMARY_FIELDS, "query": {"bool": {"filter": filters}}})
+    runs = [_run_from_status(h, full=False) for h in data["hits"]["hits"]]
+    return [r for r in runs if r and (not job or r.job_name == job)]
+
+
+def _run_from_status(hit: dict, full: bool) -> Run | None:
+    """A run known only from its status-data document (no decisions)."""
+    src = hit["_source"]
+    url = lookup(src, BUILD_URL_FIELD)
+    if not isinstance(url, str) or not src.get("ended"):
+        return None
+    job_name, number = _split_build(url)
+    # Decisions store UTC without a zone; keep `uploaded` in the same form.
+    run = Run(url, job_name, number, _utc(src["ended"]).replace(tzinfo=None).isoformat())
+    run.status = _status_summary(hit, full)
+    return run
 
 
 def get_run(job: str, number: str) -> Run | None:
@@ -183,8 +222,10 @@ def get_run(job: str, number: str) -> Run | None:
         ]}},
     })
     hits = data["hits"]["hits"]
-    if not hits:
-        return None
+    if not hits:  # maybe a run pass_or_fail didn't check (unchecked_runs)
+        hits = _es("POST", f"{STATUS_INDICES}/_search", {"size": 1, "query": {
+            "wildcard": {f"{BUILD_URL_FIELD}.keyword": f"*/{job}/{number}/"}}})["hits"]["hits"]
+        return _run_from_status(hits[0], full=True) if hits else None
     first = hits[0]["_source"]
     run = Run(first["build_url"], job, number, min(h["_source"].get("uploaded", "") for h in hits))
     run.decisions = sorted((_decision(h["_source"]) for h in hits), key=lambda d: (d.result != "FAIL", d.metric))
@@ -249,8 +290,7 @@ def attach_status(runs: list[Run], full: bool = False) -> None:
     latest `ended` within JOIN_WINDOW before the run's first decision."""
     if not runs:
         return
-    source = True if full else ["id", "name", "result", "golden", "started", "ended", "parameters.start",
-                                "parameters.end", "results.end", "parameters.cluster.pods", BUILD_URL_FIELD]
+    source = True if full else _SUMMARY_FIELDS
     try:
         data = _es("POST", f"{STATUS_INDICES}/_search", {
             "size": len(runs) * 2,
@@ -320,6 +360,7 @@ def _status_summary(hit: dict, full: bool) -> dict:
         "ended": src.get("ended"),
         "images": _images(src),
         "image_builds": _image_builds(src),
+        "identity": test_identity(src),
         "test": ((src.get("parameters") or {}).get("test")) if full else None,
         "comments": src.get("comments") if full else None,
     }
@@ -359,6 +400,11 @@ COMPARABLE_FIELDS = (
     ("parameters", "test", "duration"),
     ("parameters", "locust", "num_clients"),
 )
+
+# Status-data fields _status_summary reads when not `full`.
+_SUMMARY_FIELDS = ["id", "name", "result", "golden", "started", "ended", "parameters.start",
+                   "parameters.end", "results.end", "parameters.cluster.pods", BUILD_URL_FIELD,
+                   *(".".join(keys) for keys in COMPARABLE_FIELDS)]
 
 
 def lookup(doc, path: str):
@@ -413,9 +459,7 @@ def comparable_history(run: Run, metrics: list[str], size: int = 40,
     window = {"lte": doc["ended"]}
     if days:
         window["gte"] = (_utc(doc["ended"]) - dt.timedelta(days=days)).isoformat()
-    filters = [{"range": {"ended": window}}]
-    for field, value in ident.items():
-        filters.append({"term": {f"{field}.keyword" if isinstance(value, str) else field: value}})
+    filters = [{"range": {"ended": window}}, *_identity_filters(ident)]
     data = _es("POST", f"{run.status['index']}/_search", {
         "size": size,
         "sort": [{"ended": "desc"}],
@@ -466,6 +510,33 @@ def comparable_history(run: Run, metrics: list[str], size: int = 40,
             })
         out[m] = points
     return ident, out
+
+
+def _identity_filters(ident: dict) -> list[dict]:
+    return [{"term": {f"{field}.keyword" if isinstance(value, str) else field: value}}
+            for field, value in ident.items()]
+
+
+def has_baseline(run: Run) -> bool | None:
+    """Whether pass_or_fail had history for this run: an earlier golden PASS run of the same
+    test (test_identity) among the last 50, as its query takes, that pass_or_fail checked
+    itself (has decisions). A run with no decisions that a review passed later, e.g. the one
+    passed to start a baseline, wasn't history yet when this run was checked. pass_or_fail's
+    query is configured per job; for Kessel it filters on the same fields, other jobs may
+    use others. None without status data."""
+    s = run.status or {}
+    if not s.get("ended") or not s.get("identity"):
+        return None
+    filters = [{"range": {"ended": {"lt": s["ended"]}}},
+               {"term": {"golden.keyword": "true"}}, {"term": {"result.keyword": "PASS"}},
+               *_identity_filters(s["identity"])]
+    hits = _es("POST", f"{s['index']}/_search", {
+        "size": 50, "sort": [{"ended": "desc"}], "_source": [BUILD_URL_FIELD],
+        "query": {"bool": {"filter": filters}}})["hits"]["hits"]
+    urls = [u for h in hits if isinstance(u := lookup(h["_source"], BUILD_URL_FIELD), str)]
+    if not urls:
+        return bool(hits)  # PASS runs without build URLs (older documents): can't tell, assume checked
+    return _es("POST", f"{DECISIONS_INDEX}/_count", {"query": {"terms": {"build_url.keyword": urls}}})["count"] > 0
 
 
 def previous_comparable(run: Run) -> Run | None:

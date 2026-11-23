@@ -6,7 +6,7 @@
   <span class="arrow">{{ m.arrow }}</span>{% if within %}≈ {% endif %}{{ name or m.short_name }} {{ m.deviation_pct|pct }}</span>
 {%- endmacro %}
 
-{% set LABEL_ICONS = {"PASS": "✓", "FAIL": "✗", "ERROR": "!", "REGRESSION": "⚠", "IMPROVED": "★", "UNCLEAR": "?", "NOISE": "≈", "OUTLIER": "↯"} %}
+{% set LABEL_ICONS = {"PASS": "✓", "FAIL": "✗", "ERROR": "!", "REGRESSION": "⚠", "IMPROVED": "★", "UNCLEAR": "?", "NOISE": "≈", "OUTLIER": "↯", "NO_BASELINE": "∅", "UNCHECKED": "–"} %}
 {% macro tag(label) -%}
 <span class="tag {{ label|lower }}">{{ LABEL_ICONS.get(label, "") }} {{ label }}</span>
 {%- endmacro %}

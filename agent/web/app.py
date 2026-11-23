@@ -38,6 +38,7 @@ templates.env.globals.update(
     noise_k=rules.NOISE_K,
     noise_floor_pct=rules.NOISE_FLOOR_PCT,
     noise_days=rules.NOISE_DAYS,
+    better_direction=rules.better_direction,
 )
 templates.env.filters["num"] = fmt.num
 templates.env.filters["pct"] = fmt.pct
@@ -156,11 +157,21 @@ def runs_page(request: Request, days: int = 7, job: str = "", result: str = "", 
 def run_page(request: Request, job: str, number: str, saved: bool = False):
     run = es.get_run(job, number)
     if run is None:
-        raise HTTPException(404, f"No decisions found for {job} #{number}")
+        raise HTTPException(404, f"No decisions or status data found for {job} #{number}")
     assessment = evaluate(run, all_metrics=True)
     metrics = [r.decision.metric for r in assessment.readings]
+    if not run.decisions:
+        # Nothing was checked: show what this job checks in its other runs (a year back, as below).
+        metrics = sorted(es.gated_metrics(job, days=365))
     test, history = es.comparable_history(run, [m for m in metrics if m != "?"])
     charts = {m: sparkline(points, highlight_url=run.build_url) for m, points in history.items()}
+    # Unchecked run: {metric: (this run's value, earlier runs of the test with a value)}.
+    unchecked_values = {}
+    if not run.decisions:
+        for m, points in history.items():
+            value = next((p["value"] for p in points if p.get("build_url") == run.build_url), None)
+            if value is not None:
+                unchecked_values[m] = (value, sum(p.get("value") is not None for p in points) - 1)
     # opl's pass_or_fail records a check that raised as {"result": "ERROR"} with no metric name
     # (pass_or_fail.py: info_all.append({"result": "ERROR", "exception": ...}), and the exception
     # text is dropped before upload). Name the candidates: metrics this job checks in other runs
@@ -174,6 +185,7 @@ def run_page(request: Request, job: str, number: str, saved: bool = False):
     user = current_user(request)
     return templates.TemplateResponse(request, "run.html", dict(
         charts=charts, test=test, nameless_errors=nameless_errors, missing_metrics=missing_metrics,
+        unchecked_values=unchecked_values,
         **_review_context(run, assessment, user, saved)))
 
 

@@ -142,6 +142,19 @@ def test_failures_are_never_an_outlier():
     assert a.label == "REGRESSION" and "failures rose" in a.summary
 
 
+def test_run_without_decisions_is_NO_BASELINE_or_UNCHECKED():
+    # InsightsKesselK6_runnerAPI #4730: first DeleteResource run with 7 clients; pass_or_fail found
+    # no golden PASS history ("No data available in historical results!") and uploaded no decisions.
+    r = run()
+    assert r.result == "FAIL"  # what the pipeline records when pass_or_fail exits early
+    a = assess(r, has_baseline=False)
+    assert a.label == "NO_BASELINE" and a.predicted_category == "requires_investigation"
+    assert "false_positive" in a.summary  # tells the reviewer how to start the baseline
+    # History exists (e.g. InsightsInventory_runner #3592), or couldn't be checked: UNCHECKED.
+    assert assess(r, has_baseline=True).label == "UNCHECKED"
+    assert assess(r).label == "UNCHECKED"
+
+
 def test_fail_ratio_uses_absolute_limit():
     m = "results.requests.SUMMARY.fail_ratio"
     assert assess(run(d(m, 0.004, 0, 0.001)), {m: None}).label == "NOISE"       # under 1%

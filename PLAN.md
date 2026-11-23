@@ -383,6 +383,14 @@ flowchart TD
   - `REGRESSION`: at least one worse move is beyond its normal range, or there's too little
     history to tell. The summary says whether images changed, or why it isn't an `OUTLIER`
     (for example, the previous run was beyond the band too: a sustained shift).
+  - `NO_BASELINE` and `UNCHECKED`: `pass_or_fail` left no decisions, so the run is found
+    through its status data. `NO_BASELINE` means no earlier golden PASS run of the same test
+    exists: `pass_or_fail` exits with "No data available in historical results!" before
+    uploading, and the pipeline records FAIL. Only PASS runs become history, so every run of
+    a new test or parameter set (e.g. Kessel DeleteResource at 7 clients) fails this way
+    until a review passes one. `UNCHECKED` means such runs exist, so the cause is elsewhere
+    (a failed step, or a job history query that filters on other fields). Both predict
+    `requires_investigation`.
   - `IMPROVED` and `NOISE` predict `false_positive` and count together
     toward that category's auto-apply bar (6.4). The Reviews page shows the label mix.
     `ERROR` (a check couldn't run) predicts `requires_investigation`: the rules can't tell a
