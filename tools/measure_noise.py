@@ -19,11 +19,13 @@ Read-only: only `_search` requests are sent.
 import argparse
 import collections
 import datetime
+import os
 import pathlib
 import re
 import statistics
 import sys
 
+import jinja2
 import requests
 import yaml
 
@@ -61,6 +63,25 @@ def nested(doc, keys):
             return None
         doc = doc[k]
     return doc
+
+
+class Current:
+    """What an investigator-conf template sees as `current`: get() by dotted path."""
+
+    def __init__(self, doc):
+        self.doc = doc
+
+    def get(self, path, default=None):
+        node = nested(self.doc, path.split("."))
+        return default if node is None else node
+
+
+def set_metrics(sets, doc):
+    """Metric paths pass_or_fail gates for a run like `doc`. `sets` is a list of paths or
+    {name: path} dicts, or a Jinja2 template of one, rendered as pass_or_fail does."""
+    if isinstance(sets, str):
+        sets = yaml.safe_load(jinja2.Template(sets).render(current=Current(doc), environ=os.environ)) or []
+    return [s["name"] if isinstance(s, dict) else s for s in sets]
 
 
 def is_pr_run(doc):
@@ -141,7 +162,7 @@ def main():
         before = len(rows)
         for key, gdocs in usable.items():
             label = " / ".join(f"{n}={v}" for (n, _), v in zip(GROUP_FIELDS, key[1:]) if v is not None) or key[0]
-            for metric in conf["sets"]:
+            for metric in set_metrics(conf["sets"], gdocs[0]):
                 values = [v for v in (lookup(d, metric) for d in gdocs) if v is not None]
                 if len(values) < args.min_runs:
                     continue
